@@ -1,5 +1,6 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { normalizeEmail } from "../utils/emailIdentity.js";
+import { insecureDevAllowed } from "../utils/devMode.js";
 
 /**
  * The OTP limiters' bucket: the normalised sign-in address, the same key the
@@ -16,10 +17,14 @@ const otpBucket = (req) => {
 /**
  * Locally every request arrives from the same loopback IP, so ordinary testing
  * (or an automated script) burns through the auth allowance and locks the
- * developer out of their own admin panel for 15 minutes. Production keeps full
- * brute-force protection.
+ * developer out of their own admin panel for 15 minutes.
+ *
+ * Standing the limiters down requires an explicit local opt-in, and is
+ * impossible on a deployment — see utils/devMode.js. It used to key off
+ * NODE_ENV, which disarmed every limiter below on a live site the moment that
+ * one variable was wrong.
  */
-const skipInDevelopment = () => process.env.NODE_ENV === "development";
+const skipWhenInsecureDevAllowed = () => insecureDevAllowed();
 
 /**
  * Rate limiter for auth endpoints — prevent brute force attacks.
@@ -31,7 +36,7 @@ export const authLimiter = rateLimit({
   message: { error: "Too many attempts. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipInDevelopment,
+  skip: skipWhenInsecureDevAllowed,
 });
 
 /**
@@ -50,7 +55,7 @@ export const refreshLimiter = rateLimit({
   message: { error: "Too many session refreshes. Please try again in a few minutes." },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipInDevelopment,
+  skip: skipWhenInsecureDevAllowed,
 });
 
 /**
@@ -77,7 +82,7 @@ export const publicFormLimiter = rateLimit({
   message: { error: "Too many submissions. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipInDevelopment,
+  skip: skipWhenInsecureDevAllowed,
 });
 
 /**
@@ -90,7 +95,7 @@ export const otpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: otpBucket,
-  skip: skipInDevelopment,
+  skip: skipWhenInsecureDevAllowed,
 });
 
 /**
@@ -104,7 +109,7 @@ export const otpVerifyLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: otpBucket,
-  skip: skipInDevelopment,
+  skip: skipWhenInsecureDevAllowed,
 });
 
 /**
@@ -125,7 +130,7 @@ const OTP_RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
 const recipientsByIp = new Map(); // ip bucket -> Map(emailKey -> first seen ms)
 
 export const otpRecipientLimiter = (req, res, next) => {
-  if (skipInDevelopment()) return next();
+  if (skipWhenInsecureDevAllowed()) return next();
   const n = normalizeEmail(req.body?.email);
   if (!n.ok) return next(); // the route rejects it; nothing will be sent
 

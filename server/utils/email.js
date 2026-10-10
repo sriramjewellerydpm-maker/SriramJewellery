@@ -38,6 +38,7 @@
  */
 
 import dotenv from "dotenv";
+import { insecureDevAllowed } from "./devMode.js";
 dotenv.config();
 
 // ─── Provider adapters ───────────────────────────────────────────────────────
@@ -113,7 +114,11 @@ const WEBMAIL = /@(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|icloud|
 
 const webmailSenderAllowed = () => process.env.ALLOW_WEBMAIL_SENDER === "true";
 
-const isDevelopment = () => process.env.NODE_ENV === "development";
+// Gates console mode and EMAIL_DRY_RUN. False on any deployment, so an
+// unconfigured provider yields "unavailable" (a loud 503) instead of printing
+// customers' sign-in codes into the log — which is what happened in
+// production when this keyed off NODE_ENV.
+const isDevelopment = () => insecureDevAllowed();
 
 /**
  * Current mode and, when not live, why. Read on every call so a config

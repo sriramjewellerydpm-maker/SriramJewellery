@@ -3,12 +3,17 @@ import dotenv from "dotenv";
 import { AUTH_CODES } from "../../shared/authCodes.js";
 dotenv.config();
 
-export const JWT_SECRET =
-  process.env.JWT_SECRET ||
-  (process.env.NODE_ENV === "development" ? "fallback-dev-secret-change-in-production" : null);
+export const JWT_SECRET = process.env.JWT_SECRET || null;
 
 // Fail closed on auth, but never at module load — throwing here would crash the
 // whole serverless function and take every route (including public ones) with it.
+//
+// There is deliberately NO development fallback. One used to live here, gated
+// on NODE_ENV: a literal committed to a public repository, which became the
+// live signing key on any deployment where NODE_ENV was not "production" —
+// and anyone reading the repo could then mint an ADMIN token. A secret that
+// has a default is not a secret. Development sets JWT_SECRET like everywhere
+// else; `openssl rand -base64 32` is the whole setup step.
 if (!JWT_SECRET) {
   console.error(
     "FATAL: JWT_SECRET is not set. All authentication endpoints will refuse requests until it is configured."

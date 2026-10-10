@@ -107,16 +107,31 @@ describe("apiLimiter (200 / min / IP, always on)", () => {
   });
 });
 
-describe("development mode", () => {
-  it("auth / OTP / public-form limiters are skipped, apiLimiter is not", async () => {
-    process.env.NODE_ENV = "development";
+describe("insecure-dev opt-in", () => {
+  it("auth / OTP / public-form limiters stand down, apiLimiter is not", async () => {
+    // The opt-in, not NODE_ENV. VERCEL must be cleared too: the harness sets it
+    // so server/index.js skips app.listen, and a deployment can never opt in.
+    process.env.ALLOW_INSECURE_DEV = "true";
+    const vercel = process.env.VERCEL;
+    delete process.env.VERCEL;
     try {
       const logins = await hammer(15, () => ctx.api().post("/api/auth/login").send({ email: "x@y.co", password: "bad" }));
       expect(logins).not.toContain(429);
       const forms = await hammer(8, (i) => ctx.api().post("/api/contact").send({ name: "A", email: "a@b.co", message: `m${i}` }));
       expect(forms).not.toContain(429);
     } finally {
-      process.env.NODE_ENV = "production";
+      delete process.env.ALLOW_INSECURE_DEV;
+      if (vercel !== undefined) process.env.VERCEL = vercel;
+    }
+  });
+
+  it("the opt-in is ignored on a deployment — limiters stay armed when VERCEL is set", async () => {
+    process.env.ALLOW_INSECURE_DEV = "true"; // VERCEL stays set by the harness
+    try {
+      const logins = await hammer(15, () => ctx.api().post("/api/auth/login").send({ email: "x@y.co", password: "bad" }));
+      expect(logins).toContain(429);
+    } finally {
+      delete process.env.ALLOW_INSECURE_DEV;
     }
   });
 });

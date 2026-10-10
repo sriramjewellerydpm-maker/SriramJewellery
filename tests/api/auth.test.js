@@ -174,8 +174,9 @@ describe("POST /api/auth/otp/request (email)", () => {
     expect((await requestOtp(uniqueEmail())).status).toBe(503);
   });
 
-  it("console mode (development, no provider): 200, the code is printed, and it verifies", async () => {
-    setEnv("NODE_ENV", "development");
+  it("console mode (insecure-dev opt-in, no provider): 200, the code is printed, and it verifies", async () => {
+    setEnv("ALLOW_INSECURE_DEV", "true");
+    setEnv("VERCEL", undefined); // console mode is unreachable on a deployment
     setEnv("BREVO_API_KEY", undefined);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const email = uniqueEmail();

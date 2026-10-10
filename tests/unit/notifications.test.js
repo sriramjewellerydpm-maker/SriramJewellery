@@ -203,7 +203,7 @@ describe("email.js (real module, the provider's HTTP API mocked)", () => {
 
   it("console: unconfigured + NODE_ENV=development prints the message and never calls the provider", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await withEnv({ NODE_ENV: "development", BREVO_API_KEY: undefined }, async () => {
+    await withEnv({ NODE_ENV: "development", ALLOW_INSECURE_DEV: "true", VERCEL: undefined, BREVO_API_KEY: undefined }, async () => {
       const email = await vi.importActual("../../server/utils/email.js");
       expect(email.emailConfig().mode).toBe("console");
       const r = await email.sendMail({ to: "a@b.test", subject: "s", text: "Your code is 482913" });
@@ -229,14 +229,29 @@ describe("email.js (real module, the provider's HTTP API mocked)", () => {
     }
   );
 
-  it("EMAIL_DRY_RUN is honoured only in development", async () => {
+  it("EMAIL_DRY_RUN is honoured only behind the insecure-dev opt-in", async () => {
     const email = await vi.importActual("../../server/utils/email.js");
-    await withEnv({ EMAIL_DRY_RUN: "true", NODE_ENV: "production" }, async () => {
+    // No opt-in: the flag is ignored and mail really sends. NODE_ENV plays no
+    // part — it used to, which is how a deployment ended up in console mode.
+    await withEnv({ EMAIL_DRY_RUN: "true", NODE_ENV: "development", VERCEL: undefined }, async () => {
       expect(email.emailConfig().mode).toBe("live");
     });
-    await withEnv({ EMAIL_DRY_RUN: "true", NODE_ENV: "development" }, async () => {
+    await withEnv({ EMAIL_DRY_RUN: "true", ALLOW_INSECURE_DEV: "true", VERCEL: undefined }, async () => {
       expect(email.emailConfig().mode).toBe("console");
     });
+  });
+
+  it("the insecure-dev opt-in cannot relax anything on a deployment", async () => {
+    const email = await vi.importActual("../../server/utils/email.js");
+    // VERCEL set: the opt-in is ignored, so an unconfigured provider fails
+    // loudly instead of printing sign-in codes into the deploy log.
+    await withEnv(
+      { ALLOW_INSECURE_DEV: "true", VERCEL: "1", NODE_ENV: "development", BREVO_API_KEY: undefined },
+      async () => {
+        expect(email.emailConfig().mode).toBe("unavailable");
+        expect(email.canDeliverEmail()).toBe(false);
+      }
+    );
   });
 
   it.each(["Shop <shop@gmail.com>", "shop@googlemail.com", "Shop <x@outlook.com>"])(
