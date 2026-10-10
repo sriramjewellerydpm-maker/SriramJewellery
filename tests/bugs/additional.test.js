@@ -188,7 +188,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
   it("B2: discountPrice is calculated, never stored; a legacy stored value is ignored", async () => {
     const { token } = await makeAdmin();
     const res = await ctx.api(token).post("/api/products").send({ name: "Bangle", category: "Gold", weight: 10, discountPercentage: 10, discountPrice: 5 });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const { Product } = await import("../../server/models/Product.js");
     expect((await Product.findById(res.body.data._id).lean()).discountPrice).toBeUndefined();
     await seedRates();
@@ -339,7 +339,7 @@ describe("B4 · products accepted negative weight / stock / price (fixed for new
 
   it("B4 (kept): zero weight, zero stock and zero price are valid", async () => {
     const res = await create({ weight: 0, stock: 0, price: 0 });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.data).toMatchObject({ weight: 0, stock: 0, price: 0 });
   });
 
@@ -758,12 +758,26 @@ describe("B17 · z.coerce.boolean() read the string 'false' as true (fixed)", ()
     expect(res.body.data.isQuoteOnly).toBe(false);
   });
 
-  it("B17b: buyNow:'false' still clears the cart", async () => {
+  it("B17b: buyNow:'false' is falsy, so the purchased piece leaves the bag", async () => {
     await seedCatalog();
     const c = await makeCustomer();
+    await ctx.api(c.token).post("/api/cart").send({ productId: "gold-ring", name: "G" });
     await ctx.api(c.token).post("/api/cart").send({ productId: "silver-anklet", name: "A" });
-    await checkout(c.token, { items: [{ productId: "gold-ring" }], buyNow: "false" });
-    expect(await Cart.countDocuments({ userId: String(c.user._id) })).toBe(0);
+    const created = await checkout(c.token, { items: [{ productId: "gold-ring" }], buyNow: "false" });
+    // Two things moved since this test was written. The bag is emptied on
+    // confirmation rather than on creation — an order nobody has paid for must
+    // not clear it — and only the PAID items leave, not the whole bag (B21).
+    // So the assertion is that 'false' was read as falsy: had it been read as
+    // true (the B17 bug) this would have been treated as a Buy Now and the
+    // gold ring would still be sitting in the cart.
+    const rzpId = created.body.razorpayOrderId;
+    await ctx.api(c.token).post("/api/payment/verify").send({
+      razorpay_order_id: rzpId,
+      razorpay_payment_id: "pay_B17B",
+      razorpay_signature: razorpaySignature(rzpId, "pay_B17B"),
+    });
+    const left = await Cart.find({ userId: String(c.user._id) }).lean();
+    expect(left.map((i) => i.productId)).toEqual(["silver-anklet"]);
   });
 });
 
