@@ -89,7 +89,8 @@ export const LEGAL_PAGES = {
           "We collect only what an order needs to exist. Specifically:",
         ],
         list: [
-          "Your mobile number — this is your account identity, since you sign in with a one-time code rather than a password.",
+          "Your email address — this is your account identity, since you sign in with a one-time code sent to it rather than a password.",
+          "Your mobile number, which we use to reach you about a delivery. It is not how you sign in.",
           "Your name, once you provide it after your first sign-in.",
           "Delivery addresses you save.",
           "Your order, cart and wishlist history.",
@@ -410,7 +411,7 @@ export const LEGAL_PAGES = {
         body: [
           "Customers sign in with a one-time code, so there is no customer password for an attacker to steal or reuse.",
           "Administrator passwords are stored only as bcrypt hashes at cost factor 12 — never in plain text, and not reversible.",
-          "One-time codes are themselves stored hashed, expire after five minutes, and are rate-limited per phone number.",
+          "One-time codes are themselves stored hashed, expire after five minutes, can be used once, and are rate-limited per email address. A code is destroyed after a small number of wrong guesses, so it cannot be worked through.",
           "Sessions use short-lived access tokens with longer-lived refresh tokens, and refresh tokens are stored hashed rather than in the clear.",
         ],
       },

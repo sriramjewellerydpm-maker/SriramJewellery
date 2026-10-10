@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import cors from "cors";
 import productsRouter from "./routes/products.js";
 import cartRouter from "./routes/cart.js";
@@ -27,6 +28,21 @@ const PORT = process.env.PORT || 5000;
 // express-rate-limit throws a ValidationError because it cannot derive a
 // trustworthy client IP.
 app.set("trust proxy", 1);
+
+// Hardens API responses. The Content-Security-Policy that matters lives in
+// vercel.json, not here: Vercel serves index.html straight from its CDN and
+// rewrites only /api/* into this function, so a CSP set on these responses
+// would never reach the document the browser actually renders. Setting it in
+// both places would also give two sources of truth that silently drift.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    // The API is called cross-origin in development (Vite on :5173), and these
+    // two would block that before the CORS allow-list is consulted.
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
+  })
+);
 
 // Warm the connection at module load, but don't rely on it having finished —
 // the middleware below awaits it per-request.

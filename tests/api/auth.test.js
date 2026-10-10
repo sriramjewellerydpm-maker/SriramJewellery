@@ -337,7 +337,10 @@ describe("POST /api/auth/otp/verify (email)", () => {
     // Right code, any spelling of the taken number.
     const taken = await verifyOtp(email, code, { name: "Asha", phone: other.phone.replace("+91", "") });
     expect(taken.status).toBe(409);
-    expect(taken.body.error).toBe("That mobile number is already linked to another account");
+    // Says the number could not be used, never that it belongs to someone
+    // else — the other record is often the customer's own pre-email account.
+    expect(taken.body.error).toMatch(/couldn't use that mobile number/i);
+    expect(taken.body.error).not.toMatch(/another account/i);
     expect(taken.body.accessToken).toBeUndefined();
     expect(await User.countDocuments({ emailKey: email })).toBe(0);
     expect((await verifyOtp(email, code, DETAILS())).status).toBe(200);

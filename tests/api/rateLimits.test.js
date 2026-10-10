@@ -102,7 +102,22 @@ describe("publicFormLimiter (5 / 15 min / IP)", () => {
 
 describe("apiLimiter (200 / min / IP, always on)", () => {
   it("201st request in a minute → 429", async () => {
-    const statuses = await Promise.all(Array.from({ length: 201 }, () => ctx.api().get("/api/rates").then((r) => r.status)));
+    // Issued in bounded batches, not 201 at once. Firing them all together
+    // opens 201 simultaneous sockets against an accept queue the kernel caps
+    // at kern.ipc.somaxconn (128 on macOS), so ~70 connections are reset
+    // before Express ever sees them — measured: 133×200, 0×429, 68×ECONNRESET,
+    // i.e. the limiter was never even reached. Raising the listen backlog does
+    // not help, because somaxconn is the real ceiling. At 50 the resets vanish
+    // entirely and the limiter does the deciding, which is what this asserts.
+    const statuses = [];
+    for (let sent = 0; sent < 201; sent += 50) {
+      const batch = Math.min(50, 201 - sent);
+      statuses.push(
+        ...(await Promise.all(
+          Array.from({ length: batch }, () => ctx.api().get("/api/rates").then((r) => r.status))
+        ))
+      );
+    }
     expect(statuses.filter((s) => s === 429)).toHaveLength(1);
   });
 });

@@ -869,7 +869,7 @@ const runRegistrationFlow = async (browser, viewport, seeded) => {
       // No lookup before the code: the email step comes up as for any number.
       await page.locator("#auth-page-email").waitFor({ timeout: 5_000 });
       await enterCode("auth-page", clashEmail);
-      await page.getByText(/already linked to another account/i).waitFor({ timeout: 10_000 });
+      await page.getByText(/couldn't use that mobile number/i).waitFor({ timeout: 10_000 });
       expectTrue(await page.locator("#auth-page-phone").inputValue() !== "", "the typed number was cleared");
       expectTrue(!(await tokenOf(page)) && !(await accountFor(clashEmail)), "an account or session exists after the clash");
       await page.locator("#auth-page-phone").fill(freshPhone());

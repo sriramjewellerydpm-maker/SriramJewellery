@@ -150,9 +150,22 @@ const Payment = () => {
         return;
       }
 
+      // Refuse rather than open Razorpay with nothing. This used to fall back
+      // to a placeholder key string, which made checkout open and then fail
+      // inside Razorpay's own modal with a message the customer cannot act on
+      // and the shop cannot see — a misconfigured server looked like a broken
+      // card. The server sends the key from RAZORPAY_KEY_ID; if it is absent
+      // the shop cannot take payments and should say so plainly.
+      if (!razorpayKey || !orderId) {
+        console.error("Payment unavailable: the server returned no Razorpay key or order id.");
+        setPaymentError("Online payment isn't available right now. Please contact us and we'll help you complete your order.");
+        setLoadingPayment(false);
+        return;
+      }
+
       // 2. Open Razorpay Checkout modal
       const options = {
-        key: razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_YOUR_KEY_HERE",
+        key: razorpayKey,
         amount: Math.round(amount * 100), // Razorpay expects amount in paise (1 INR = 100 paise)
         currency: "INR",
         name: "Sri Ram Jewellery",

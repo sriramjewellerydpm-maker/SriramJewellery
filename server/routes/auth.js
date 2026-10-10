@@ -265,7 +265,22 @@ router.post("/otp/request", otpLimiter, otpRecipientLimiter, async (req, res) =>
   }
 });
 
-const PHONE_TAKEN = "That mobile number is already linked to another account";
+/**
+ * Shown when a phone number cannot be attached to this account.
+ *
+ * Deliberately says nothing about WHY. The old wording — "already linked to
+ * another account" — told a customer their own number belonged to someone
+ * else, which is both alarming and wrong-sounding when the other record is
+ * their own pre-email account. It also confirmed to anyone probing that a
+ * given number is registered.
+ *
+ * The usual cause is a number shared with a household member, or a second
+ * record from before email sign-in, and neither is something the customer can
+ * fix alone — so this routes to a human instead of to a retry they cannot win.
+ */
+const PHONE_TAKEN =
+  "We couldn't use that mobile number for this account. Please try another number, " +
+  "or contact us and we'll sort it out for you.";
 
 /** The session and profile summary every successful code verification returns. */
 const signedInResponse = async (user, { isNewAccount }) => {
