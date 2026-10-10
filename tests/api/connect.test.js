@@ -3,7 +3,7 @@
  * what happens when the database cannot be reached. Runs without useApp() so
  * connectDB() does the connecting itself.
  */
-import { describe, it, expect, inject, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, inject, afterAll, afterEach, beforeEach } from "vitest";
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 
@@ -11,13 +11,25 @@ const base = inject("mongoUri").replace(/\/$/, "");
 const freshDb = () => `${base}/seed_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
 
 let connectDB;
+let vercelFlag;
 beforeEach(async () => {
   if (mongoose.connection.readyState !== 0) {
     await mongoose.connection.dropDatabase().catch(() => {});
     await mongoose.disconnect();
   }
   globalThis.__mongooseCache = { conn: null, promise: null };
+  // Demo seeding is now gated on insecureDevAllowed(): an explicit opt-in that
+  // VERCEL overrides. The harness sets VERCEL so index.js skips app.listen, so
+  // both have to be arranged for these tests to reach the seeding path at all.
+  process.env.ALLOW_INSECURE_DEV = "true";
+  vercelFlag = process.env.VERCEL;
+  delete process.env.VERCEL;
   connectDB = (await import("../../server/db/connect.js")).default;
+});
+
+afterEach(() => {
+  delete process.env.ALLOW_INSECURE_DEV;
+  if (vercelFlag !== undefined) process.env.VERCEL = vercelFlag;
 });
 
 afterAll(async () => {
@@ -28,6 +40,44 @@ afterAll(async () => {
 });
 
 describe("connectDB", () => {
+  it("never seeds demo data on a deployment, even with the opt-in set", async () => {
+    // An admin deleting the last product used to re-seed demo jewellery AND
+    // demo rates into a live shop. The rates were the dangerous half: a second
+    // GoldRate document for a metal silently becomes the effective rate, so
+    // every price on the storefront and every amount charged would move to it.
+    process.env.VERCEL = "1";
+    process.env.MONGODB_URI = freshDb();
+    try {
+      await connectDB();
+      const { Product } = await import("../../server/models/Product.js");
+      const { GoldRate } = await import("../../server/models/GoldRate.js");
+      const { Category } = await import("../../server/models/Category.js");
+      expect(await Product.countDocuments()).toBe(0);
+      expect(await GoldRate.countDocuments()).toBe(0);
+      expect(await Category.countDocuments()).toBe(0);
+    } finally {
+      delete process.env.VERCEL;
+    }
+  });
+
+  it("still creates the first administrator on a deployment", async () => {
+    // The admin bootstrap is deliberately outside the demo gate: it is
+    // idempotent, needs ADMIN_PASSWORD set on purpose, and is the only way a
+    // fresh production database gets its first administrator.
+    process.env.VERCEL = "1";
+    process.env.MONGODB_URI = freshDb();
+    try {
+      await connectDB();
+      const { User } = await import("../../server/models/User.js");
+      const admin = await User.findOne({ role: "ADMIN" }).lean();
+      expect(admin?.email).toBe("admin@buildwithus");
+      expect(await User.countDocuments({ email: "user@test.com" })).toBe(0);
+    } finally {
+      delete process.env.VERCEL;
+    }
+  });
+
+
   it("seeds an empty database once: 5 products, 2 fresh rates, 3 categories, the admin", async () => {
     process.env.MONGODB_URI = freshDb();
     const conn = await connectDB();
@@ -43,8 +93,10 @@ describe("connectDB", () => {
     const admin = await User.findOne({ email: "admin@buildwithus" }).lean();
     expect(admin.role).toBe("ADMIN");
     expect(await bcrypt.compare(process.env.ADMIN_PASSWORD, admin.passwordHash)).toBe(true);
-    // The shared-password test account is development-only.
-    expect(await User.findOne({ email: "user@test.com" })).toBeNull();
+    // The shared-password test account follows the same opt-in as the demo
+    // catalogue, so it appears here and can never reach a deployment — pinned
+    // by "still creates the first administrator on a deployment" above.
+    expect(await User.findOne({ email: "user@test.com" })).not.toBeNull();
 
     // Second call reuses the connection and does not re-seed.
     expect(await connectDB()).toBe(conn);

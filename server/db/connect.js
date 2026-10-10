@@ -1,6 +1,62 @@
 import mongoose from "mongoose";
+import { insecureDevAllowed } from "../utils/devMode.js";
 import dotenv from "dotenv";
 dotenv.config();
+
+/**
+ * Create the first administrator, once, from ADMIN_PASSWORD.
+ *
+ * Skipped silently when one already exists or the variable is unset, so it is
+ * safe to call on every boot and on every environment.
+ */
+const seedAdministrator = async () => {
+  const { User } = await import("../models/User.js");
+
+  // No literal fallback password. A default that lives in the source tree is a
+  // published password: the account's email sits beside it, so anyone reading
+  // the repo could sign in. Seeding is skipped rather than run with a
+  // guessable credential.
+  const existingAdmin = await User.findOne({ role: "ADMIN" }).select("_id").lean();
+  if (existingAdmin) return;
+
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword) {
+    // Only when there is genuinely no administrator — otherwise this fired on
+    // every boot of a healthy deployment that had (correctly) removed the
+    // variable after the account was created.
+    console.warn(
+      "⚠️  No administrator exists and ADMIN_PASSWORD is not set. Set it and redeploy to create one, " +
+        "or use server/scripts/resetAdminPassword.js."
+    );
+    return;
+  }
+
+  const bcrypt = await import("bcrypt");
+  await User.create({
+    name: "Admin",
+    email: "admin@buildwithus",
+    passwordHash: await bcrypt.hash(adminPassword, 12),
+    role: "ADMIN",
+    photoURL: "/placeholder-user.png",
+  });
+  console.log("   ✅ Admin user created: admin@buildwithus (password from ADMIN_PASSWORD)");
+
+  // A convenience account with a shared password has no business in a
+  // production database, so it follows the same opt-in as the demo catalogue.
+  const testPassword = process.env.TEST_USER_PASSWORD;
+  if (testPassword && insecureDevAllowed()) {
+    if (!(await User.findOne({ email: "user@test.com" }).select("_id").lean())) {
+      await User.create({
+        name: "Test User",
+        email: "user@test.com",
+        passwordHash: await bcrypt.hash(testPassword, 12),
+        role: "USER",
+        photoURL: "/placeholder-user.png",
+      });
+      console.log("   ✅ Test user created: user@test.com (password from TEST_USER_PASSWORD)");
+    }
+  }
+};
 
 const seedInitialData = async () => {
   try {
@@ -9,55 +65,33 @@ const seedInitialData = async () => {
     const { GoldRate } = await import("../models/GoldRate.js");
     const { User } = await import("../models/User.js");
 
+    // ── Administrator bootstrap ──────────────────────────────────────────
+    //
+    // Deliberately OUTSIDE the demo-data gate below. It used to sit inside
+    // `productCount === 0`, which meant a deployment whose catalogue was
+    // already populated could never create its first administrator — and a
+    // deployment whose catalogue was EMPTIED would re-run the whole block.
+    // It is idempotent (it does nothing when an admin exists) and inert
+    // unless ADMIN_PASSWORD is deliberately set, so it is safe anywhere.
+    await seedAdministrator();
+
+    // ── Demo catalogue ───────────────────────────────────────────────────
+    //
+    // Local development only. This used to run on any deployment whose
+    // products collection was empty, which made an ordinary admin action —
+    // deleting the last product — re-seed demo jewellery into a live shop.
+    //
+    // The rates were the dangerous half. getRates() builds its map with
+    // `rateMap[r.metalType] = r.ratePerGram` over an unordered find(), so the
+    // LAST document for a metal wins, and GoldRate has no uniqueness on
+    // metalType. A re-seed therefore appended a second gold document at the
+    // demo rate and it silently became the effective one: every price on the
+    // storefront and every amount charged at checkout would move to it.
+    if (!insecureDevAllowed()) return;
+
     const productCount = await Product.countDocuments();
     if (productCount === 0) {
-      console.log("🌱 Database is empty. Seeding initial products, categories, gold rates, and admin user...");
-
-      // ─── Seed Admin User with bcrypt-hashed password ─────────────────────
-      // No literal fallback passwords here. A default that lives in the source
-      // tree is a published password: the account's email is visible two lines
-      // below it, so anyone reading the repo can sign in as that account.
-      // Seeding is skipped rather than run with a guessable credential.
-      const bcrypt = await import("bcrypt");
-      const adminPassword = process.env.ADMIN_PASSWORD;
-
-      if (!adminPassword) {
-        console.warn(
-          "   ⚠️  ADMIN_PASSWORD is not set — skipping admin user seeding. " +
-            "Set it and restart to create the admin account."
-        );
-      } else {
-        const existingAdmin = await User.findOne({ email: "admin@buildwithus" });
-        if (!existingAdmin) {
-          await User.create({
-            name: "Admin",
-            email: "admin@buildwithus",
-            passwordHash: await bcrypt.hash(adminPassword, 12),
-            role: "ADMIN",
-            photoURL: "/placeholder-user.png",
-          });
-          console.log("   ✅ Admin user created: admin@buildwithus (password set from ADMIN_PASSWORD env var)");
-        }
-      }
-
-      // ─── Seed test user ──────────────────────────────────────────────────
-      // Only ever seeded in development; a convenience account with a shared
-      // password has no business existing in a production database.
-      const testPassword = process.env.TEST_USER_PASSWORD;
-
-      if (testPassword && process.env.NODE_ENV === "development") {
-        const existingTestUser = await User.findOne({ email: "user@test.com" });
-        if (!existingTestUser) {
-          await User.create({
-            name: "Test User",
-            email: "user@test.com",
-            passwordHash: await bcrypt.hash(testPassword, 12),
-            role: "USER",
-            photoURL: "/placeholder-user.png",
-          });
-          console.log("   ✅ Test user created: user@test.com (password set from TEST_USER_PASSWORD env var)");
-        }
-      }
+      console.log("🌱 Database is empty. Seeding demo products, categories and rates (local development only)...");
 
       // ─── Insert Gold/Silver Rates (per-metal format) ─────────────────────
       await GoldRate.create({
