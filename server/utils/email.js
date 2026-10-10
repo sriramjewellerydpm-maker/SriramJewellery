@@ -13,6 +13,9 @@
  *                    address, which fails the receiving side's DMARC checks.
  *   EMAIL_REPLY_TO   optional
  *   EMAIL_DRY_RUN    "true" logs instead of sending — development only
+ *   ALLOW_WEBMAIL_SENDER
+ *                    "true" permits a webmail EMAIL_FROM. Off by default; see
+ *                    the note on WEBMAIL below for what it costs.
  *
  * ── Three modes ───────────────────────────────────────────────────────────
  *   live        provider configured → mail is sent. A provider error (bad
@@ -96,9 +99,19 @@ const PROVIDERS = {
 
 const providerKey = () => (process.env.EMAIL_PROVIDER || "brevo").trim().toLowerCase();
 
-// Sending as a webmail address from our servers fails that domain's DMARC, so
-// the mail is junked or dropped. The sender must be the shop's own domain.
+// Sending as a webmail address through a third party fails that domain's DMARC
+// policy, so receivers junk or silently drop the mail. The sender should be the
+// shop's own domain.
+//
+// Refused by default, because a sign-in code that is silently dropped looks to
+// the customer like a broken site rather than a misconfigured one. It can be
+// overridden with ALLOW_WEBMAIL_SENDER="true" (exact string) while a domain is
+// still being verified — the provider will accept the send if the address is a
+// verified sender on the account, but delivery to Gmail and Outlook inboxes is
+// not something this flag can promise.
 const WEBMAIL = /@(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|icloud|me|aol|proton|protonmail|rediffmail)\.[a-z.]+>?\s*$/i;
+
+const webmailSenderAllowed = () => process.env.ALLOW_WEBMAIL_SENDER === "true";
 
 const isDevelopment = () => process.env.NODE_ENV === "development";
 
@@ -116,7 +129,9 @@ export const emailConfig = () => {
   if (!provider) problems.push(`EMAIL_PROVIDER "${providerKey()}" is not supported`);
   else if (!provider.isConfigured()) problems.push(`${provider.label} API key is not set`);
   if (!from) problems.push("EMAIL_FROM is not set");
-  else if (WEBMAIL.test(from)) problems.push(`EMAIL_FROM (${from}) must be on the shop's own domain, not a webmail address`);
+  else if (WEBMAIL.test(from) && !webmailSenderAllowed()) {
+    problems.push(`EMAIL_FROM (${from}) must be on the shop's own domain, not a webmail address`);
+  }
 
   const forcedDryRun = isDevelopment() && process.env.EMAIL_DRY_RUN === "true";
   let mode = "unavailable";
@@ -141,6 +156,12 @@ export const canDeliverEmail = () => emailConfig().mode !== "unavailable";
       "FATAL: email is not configured — " +
         problems.join("; ") +
         ". Sign-in codes cannot be sent: /api/auth/otp/request will return 503 until this is fixed."
+    );
+  } else if (mode === "live" && WEBMAIL.test(process.env.EMAIL_FROM?.trim() || "")) {
+    console.warn(
+      `⚠️  EMAIL_FROM (${process.env.EMAIL_FROM.trim()}) is a webmail address, allowed by ALLOW_WEBMAIL_SENDER. ` +
+        "Receivers check that domain's DMARC policy and may junk or drop these messages, so sign-in codes can go missing " +
+        "with no error on our side. Verify the shop's own domain and move EMAIL_FROM onto it before launch."
     );
   } else if (mode === "console") {
     console.warn(

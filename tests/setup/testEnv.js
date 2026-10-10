@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
     "STOCK_RELEASE_MINUTES",
     "RATE_STALE_AFTER_DAYS",
     "EMAIL_DRY_RUN",
+    "ALLOW_WEBMAIL_SENDER",
   ];
   Object.assign(process.env, TEST_ENV);
   for (const k of MUST_BE_UNSET) delete process.env[k];
