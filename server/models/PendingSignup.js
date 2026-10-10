@@ -17,6 +17,8 @@ const PendingSignupSchema = new mongoose.Schema({
   email: { type: String },
   otpHash: { type: String, required: true },
   otpExpiresAt: { type: Date, required: true },
+  // See User.otpAttempts — the rate limiter is per-instance, this is not.
+  otpAttempts: { type: Number, default: 0 },
 });
 
 // TTL index — MongoDB removes the record once the code expires, so an

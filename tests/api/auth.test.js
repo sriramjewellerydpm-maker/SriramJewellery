@@ -15,6 +15,7 @@ import {
 } from "../helpers/factories.js";
 import { User } from "../../server/models/User.js";
 import { PendingSignup } from "../../server/models/PendingSignup.js";
+import { countFailedGuess, OTP_MAX_ATTEMPTS } from "../../server/utils/otpGuard.js";
 import { RefreshToken } from "../../server/models/RefreshToken.js";
 import { PasswordResetToken } from "../../server/models/PasswordResetToken.js";
 
@@ -332,7 +333,7 @@ describe("POST /api/auth/otp/verify (email)", () => {
     // Wrong code: the answer says nothing about the number.
     const guess = await verifyOtp(email, wrong, { name: "Stranger", phone: other.phone });
     expect(guess.status).toBe(401);
-    expect(guess.body.error).toBe("Invalid OTP");
+    expect(guess.body.error).toBe("Invalid OTP or email address");
     // Right code, any spelling of the taken number.
     const taken = await verifyOtp(email, code, { name: "Asha", phone: other.phone.replace("+91", "") });
     expect(taken.status).toBe(409);
@@ -367,7 +368,7 @@ describe("POST /api/auth/otp/verify (email)", () => {
     const wrong = lastCodeSentTo(email) === "000000" ? "111111" : "000000";
     const res = await verifyOtp(email, wrong);
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe("Invalid OTP");
+    expect(res.body.error).toBe("Invalid OTP or email address");
   });
 
   it("expired code → 401 (new address and existing account)", async () => {
@@ -420,6 +421,122 @@ describe("POST /api/auth/otp/verify (email)", () => {
   it("missing code or bad address → 400", async () => {
     expect((await api().post("/api/auth/otp/verify").send({ email: uniqueEmail() })).status).toBe(400);
     expect((await verifyOtp("nope", "123456")).status).toBe(400);
+  });
+});
+
+describe("per-OTP verify attempt cap (the limiter's store is per-instance; this is not)", () => {
+  // otpVerifyLimiter allows 5 requests per address per 5 min, so every test
+  // here stays well inside that — otherwise a 429 masks the 401 under test.
+  const accountWithCode = async (attempts = 0) => {
+    const { user } = await makeCustomer();
+    const code = "135790";
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { otpHash: await bcrypt.hash(code, 4), otpExpiresAt: new Date(Date.now() + 5 * 60 * 1000), otpAttempts: attempts } }
+    );
+    return { user, code, email: user.email };
+  };
+
+  it("N concurrent wrong guesses below the cap count exactly N", async () => {
+    const { user, email } = await accountWithCode();
+    const N = 4;
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) => verifyOtp(email, String(100000 + i)))
+    );
+    expect(results.every((r) => r.status === 401)).toBe(true);
+
+    // Exactly N. A read-modify-write would lose increments under this race.
+    const after = await User.findById(user._id).lean();
+    expect(after.otpAttempts).toBe(N);
+    expect(after.otpHash).toBeTruthy();
+  });
+
+  it("the guess that reaches the cap destroys the code, so the real one stops working", async () => {
+    const { user, code, email } = await accountWithCode(4); // one short of the cap
+    expect((await verifyOtp(email, "999999")).status).toBe(401);
+
+    const after = await User.findById(user._id).lean();
+    expect(after.otpHash).toBeFalsy();
+    expect(after.otpExpiresAt).toBeFalsy();
+
+    expect((await verifyOtp(email, code)).status).toBe(401); // 2 requests total
+  });
+
+  it("wrong code and exhausted attempts are indistinguishable", async () => {
+    const { email } = await accountWithCode(4);
+    const atCap = await verifyOtp(email, "111111");   // burns it
+    const afterCap = await verifyOtp(email, "222222"); // code already gone
+    expect(afterCap.status).toBe(atCap.status);
+    expect(afterCap.body).toEqual(atCap.body);
+  });
+});
+
+describe("countFailedGuess interleavings (driven directly — HTTP re-reads state, so it cannot stage these)", () => {
+  const BURN = { $unset: { otpHash: "", otpExpiresAt: "" }, $set: { otpAttempts: 0 } };
+
+  const withCode = async (hash, attempts = 0) => {
+    const { user } = await makeCustomer();
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { otpHash: hash, otpExpiresAt: new Date(Date.now() + 5 * 60 * 1000), otpAttempts: attempts } }
+    );
+    return user;
+  };
+
+  it("two guesses in flight against the same code both count", async () => {
+    const user = await withCode("hash-A");
+    await Promise.all([
+      countFailedGuess(User, { _id: user._id }, "hash-A", BURN),
+      countFailedGuess(User, { _id: user._id }, "hash-A", BURN),
+    ]);
+    expect((await User.findById(user._id).lean()).otpAttempts).toBe(2);
+  });
+
+  it("a guess against a code that was already burned is not counted", async () => {
+    const user = await withCode("hash-A");
+    await User.updateOne({ _id: user._id }, BURN); // another request burned it
+    await countFailedGuess(User, { _id: user._id }, "hash-A", BURN);
+    const after = await User.findById(user._id).lean();
+    // Nothing to charge the attempt to. The code is dead either way, so the
+    // lost count costs nothing — and charging it to a later code would.
+    expect(after.otpAttempts).toBe(0);
+    expect(after.otpHash).toBeFalsy();
+  });
+
+  it("a late guess at the cap does NOT destroy a code issued after it", async () => {
+    const user = await withCode("hash-OLD", OTP_MAX_ATTEMPTS - 1);
+    // The customer asks for a new code before the last guess lands.
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { otpHash: "hash-NEW", otpExpiresAt: new Date(Date.now() + 5 * 60 * 1000), otpAttempts: 0 } }
+    );
+    // The straggler, still carrying the old hash, would reach the cap.
+    await countFailedGuess(User, { _id: user._id }, "hash-OLD", BURN);
+
+    const after = await User.findById(user._id).lean();
+    // Scoping the burn to _id alone would have wiped this and locked out a
+    // customer whose only action was requesting another code.
+    expect(after.otpHash).toBe("hash-NEW");
+    expect(after.otpAttempts).toBe(0);
+  });
+
+  it("a pending signup is deleted at the cap, and only the one it counted against", async () => {
+    await PendingSignup.create({
+      emailKey: "pend@example.com", email: "pend@example.com",
+      otpHash: "hash-OLD", otpExpiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      otpAttempts: OTP_MAX_ATTEMPTS - 1,
+    });
+    const doc = await PendingSignup.findOne({ emailKey: "pend@example.com" }).lean();
+
+    // Reissued before the straggler lands.
+    await PendingSignup.updateOne({ _id: doc._id }, { $set: { otpHash: "hash-NEW", otpAttempts: 0 } });
+    await countFailedGuess(PendingSignup, { _id: doc._id }, "hash-OLD", null);
+    expect(await PendingSignup.findById(doc._id).lean()).not.toBeNull();
+
+    // Against the live hash it does reach the cap and the record goes.
+    await PendingSignup.updateOne({ _id: doc._id }, { $set: { otpAttempts: OTP_MAX_ATTEMPTS - 1 } });
+    await countFailedGuess(PendingSignup, { _id: doc._id }, "hash-NEW", null);
+    expect(await PendingSignup.findById(doc._id).lean()).toBeNull();
   });
 });
 

@@ -27,8 +27,13 @@ const UserSchema = new mongoose.Schema({
   contactEmail: { type: String },
   passwordHash: { type: String }, // bcrypt hash — never store plaintext
   phone: { type: String, unique: true, sparse: true }, // unique and required for customers
-  otpHash: { type: String }, // For MSG91 OTP
+  otpHash: { type: String }, // bcrypt hash of the emailed sign-in code
   otpExpiresAt: { type: Date },
+  // Wrong guesses against the CURRENT code. Durable, unlike the rate limiter,
+  // whose store is in memory per serverless instance — so its real ceiling is
+  // the configured limit multiplied by however many instances are warm. This
+  // counter is in the database every instance shares, so the cap is the cap.
+  otpAttempts: { type: Number, default: 0 },
   role: { type: String, enum: ["ADMIN", "USER"], default: "USER" },
   photoURL: { type: String },
   addresses: { type: [AddressSchema], default: [] },

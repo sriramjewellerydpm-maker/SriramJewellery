@@ -11,6 +11,7 @@ import { otpLimiter, otpVerifyLimiter, otpRecipientLimiter, authLimiter } from "
 import { normalizeEmail, canonicalEmailKey } from "../utils/emailIdentity.js";
 import { profileStatus } from "../utils/profile.js";
 import { PendingSignup } from "../models/PendingSignup.js";
+import { countFailedGuess, OTP_MAX_ATTEMPTS } from "../utils/otpGuard.js";
 import { normalizeIndianPhone } from "../utils/phone.js";
 // These schemas already existed in middleware/validate.js but were wired to
 // nothing — every auth route hand-rolled its own checks.
@@ -216,6 +217,7 @@ router.post("/otp/request", otpLimiter, otpRecipientLimiter, async (req, res) =>
     if (user) {
       user.otpHash = otpHash;
       user.otpExpiresAt = otpExpiresAt;
+      user.otpAttempts = 0;
       await user.save();
       clearCode = async () => {
         user.otpHash = undefined;
@@ -223,7 +225,7 @@ router.post("/otp/request", otpLimiter, otpRecipientLimiter, async (req, res) =>
         await user.save();
       };
     } else {
-      const pending = { $set: { email: display, otpHash, otpExpiresAt } };
+      const pending = { $set: { email: display, otpHash, otpExpiresAt, otpAttempts: 0 } };
       try {
         await PendingSignup.updateOne({ emailKey }, pending, { upsert: true });
       } catch (saveError) {
@@ -306,7 +308,10 @@ const verifyNewAccount = async (req, res, { emailKey, otp, invalid }) => {
     return res.status(401).json({ error: "OTP has expired" });
   }
   if (!(await bcrypt.compare(String(otp), pending.otpHash))) {
-    return res.status(401).json({ error: "Invalid OTP" });
+    // Burn = delete the pending record, still scoped to the hash guessed at,
+    // so a code reissued for this address mid-flight is not destroyed.
+    await countFailedGuess(PendingSignup, { _id: pending._id }, pending.otpHash, null);
+    return invalid();
   }
 
   const { name, phone } = req.body;
@@ -379,14 +384,20 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       return res.status(401).json({ error: "OTP has expired" });
     }
 
-    const isMatch = await bcrypt.compare(String(otp), user.otpHash);
-    if (!isMatch) {
-      return res.status(401).json({ error: "Invalid OTP" });
+    if (!(await bcrypt.compare(String(otp), user.otpHash))) {
+      await countFailedGuess(User, { _id: user._id }, user.otpHash, {
+        $unset: { otpHash: "", otpExpiresAt: "" },
+        $set: { otpAttempts: 0 },
+      });
+      // Same reply as an unknown address: "Invalid OTP" told an attacker the
+      // address had a live code, which /otp/request is careful not to reveal.
+      return invalid();
     }
 
     // Single use: clear before issuing anything.
     user.otpHash = undefined;
     user.otpExpiresAt = undefined;
+    user.otpAttempts = 0;
     await user.save();
 
     // An existing account signs in as it is; name and phone sent with the
