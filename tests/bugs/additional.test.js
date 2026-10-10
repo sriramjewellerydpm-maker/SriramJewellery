@@ -542,11 +542,11 @@ describe("B9–B11 · rate limiting gaps (NODE_ENV=production)", () => {
     const addresses = Array.from({ length: 11 }, () => uniqueEmail("cap"));
     const send = (email, opts) => ctx.api(null, opts).post("/api/auth/otp/request").send({ email });
     for (const a of addresses.slice(0, 10)) expect((await send(a)).status).toBe(200);
-    const sentBefore = mocks().resendSend.mock.calls.length;
+    const sentBefore = mocks().emailSend.mock.calls.length;
     const refused = await send(addresses[10]);
     expect(refused.status).toBe(429);
     expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
-    expect(mocks().resendSend.mock.calls.length).toBe(sentBefore);
+    expect(mocks().emailSend.mock.calls.length).toBe(sentBefore);
     // Asking again for an address already counted is not a new recipient.
     expect((await send(addresses[0])).status).toBe(200);
     // The cap belongs to that IP: another connection can still send to it.
@@ -672,7 +672,7 @@ describe("B15 · password reset token was not claimed atomically (fixed)", () =>
   it("B15: of two concurrent resets, only the winner's password signs in", async () => {
     const admin = await makeAdmin();
     await ctx.api().post("/api/auth/password/forgot").send({ email: admin.user.email });
-    const token = mocks().resendSend.mock.calls.at(-1)[0].html.match(/token=([0-9a-f]{64})/)[1];
+    const token = mocks().emailSend.mock.calls.at(-1)[0].html.match(/token=([0-9a-f]{64})/)[1];
     const passwords = ["FirstNewPass!1", "SecondNewPass!2"];
     const results = await Promise.all(passwords.map((password) => ctx.api().post("/api/auth/password/reset").send({ token, password })));
     const winner = passwords[results.findIndex((r) => r.status === 200)];
@@ -684,7 +684,7 @@ describe("B15 · password reset token was not claimed atomically (fixed)", () =>
   it("B15: two concurrent resets with one token → exactly one succeeds", async () => {
     const admin = await makeAdmin();
     await ctx.api().post("/api/auth/password/forgot").send({ email: admin.user.email });
-    const html = mocks().resendSend.mock.calls.at(-1)[0].html;
+    const html = mocks().emailSend.mock.calls.at(-1)[0].html;
     const token = html.match(/token=([0-9a-f]{64})/)[1];
     const results = await Promise.all(
       ["FirstNewPass!1", "SecondNewPass!2"].map((password) => ctx.api().post("/api/auth/password/reset").send({ token, password }))

@@ -16,10 +16,10 @@ Nothing below is optional for production — without it **nobody can sign in**.
 
 | Variable | Value | Notes |
 |---|---|---|
-| `RESEND_API_KEY` | A Resend API key with **sending** access | From resend.com → API Keys |
+| `BREVO_API_KEY` | A Brevo **v3 API key** with sending access | From brevo.com → SMTP & API → API Keys |
 | `EMAIL_FROM` | e.g. `Sri Ram Jewellery <signin@mail.sriramjewellery.in>` | Must be on the domain you verify in step 2. **Never** a gmail.com (or other webmail) address — those are refused as misconfiguration. |
 | `EMAIL_REPLY_TO` | optional, e.g. `orders@sriramjewellery.in` | Where customer replies go |
-| `EMAIL_PROVIDER` | optional, default `resend` | Only `resend` is implemented |
+| `EMAIL_PROVIDER` | optional, default `brevo` | Only `brevo` is implemented |
 | `JWT_SECRET` | a long random string (`openssl rand -base64 32`) | Already required |
 | `MONGODB_URI`, `CRON_SECRET`, `RAZORPAY_*`, `PUBLIC_SITE_URL`, `VITE_PUBLIC_SITE_URL` | as before | See `.env.example` |
 
@@ -40,7 +40,7 @@ FATAL: email is not configured — … Sign-in codes cannot be sent: /api/auth/o
 ```
 
 and every code request returns **503** ("Sign-in codes can't be sent right
-now"). Locally, with `NODE_ENV=development` and no `RESEND_API_KEY`, codes are
+now"). Locally, with `NODE_ENV=development` and no `BREVO_API_KEY`, codes are
 printed to the API console instead of emailed, so the flow can be tried without
 an account.
 
@@ -50,45 +50,47 @@ Check the setup end to end with:
 node server/scripts/testEmail.js you@example.com
 ```
 
-### Resend's free tier: 100 emails a day
+### Brevo's free tier: 300 emails a day
 
-Every sign-in attempt sends one email. On Resend's free plan the cap is
-**100 emails per day** (and 3,000 a month). When the cap is hit, Resend refuses
-the send and **nobody can sign in until it resets** — customers already signed
-in are unaffected. It is never silent:
+Every sign-in attempt sends one email. On Brevo's free plan the cap is
+**300 emails per day**. When the cap is hit, Brevo answers `402
+not_enough_credits`, the send is refused and **nobody can sign in until the cap
+resets at 00:00 UTC** — customers already signed in are unaffected. It is never
+silent:
 
 - the customer sees "We couldn't send your sign-in code just now. Please try
   again in a few minutes." (HTTP 503)
 - the server logs, for every refused send:
 
   ```
-  🚨 EMAIL SEND FAILED — sign-in-code to <address> via Resend: <Resend's reason, e.g. daily_quota_exceeded>. If this is a quota error, nobody can sign in until the quota resets or the plan is raised.
+  🚨 EMAIL SEND FAILED — sign-in-code to <address> via Brevo: <Brevo's reason, e.g. 402 not_enough_credits>. If this is a quota error, nobody can sign in until the quota resets or the plan is raised.
   ```
 
-Set up a log alert on `EMAIL SEND FAILED`, and move to a paid Resend plan
-before launch traffic can approach 100 sign-ins a day.
+Set up a log alert on `EMAIL SEND FAILED`, and move to a paid Brevo plan
+before launch traffic can approach 300 sign-ins a day.
 
 ### 2. DNS records for the sending domain
 
-In Resend → Domains → **Add domain**. A sub-domain such as
+In Brevo → **Senders, Domains & Dedicated IPs** → **Domains** → **Add a
+domain**. A sub-domain such as
 `mail.sriramjewellery.in` is recommended, so sign-in mail never affects the
-shop's main mailboxes. Resend then shows the exact records to add at your DNS
-host. **Copy the names and values from the Resend dashboard** — they depend on
-your account and region; the shapes are:
+shop's main mailboxes. Brevo then shows the exact records to add at your DNS
+host. **Copy the names and values from the Brevo dashboard** — they depend on
+your account; the shapes are:
 
 | Purpose | Type | Name (host) | Value |
 |---|---|---|---|
-| SPF (bounce domain) | `MX` | `send.mail` | `feedback-smtp.<region>.amazonses.com`, priority `10` |
-| SPF | `TXT` | `send.mail` | `v=spf1 include:amazonses.com ~all` |
-| DKIM | `TXT` | `resend._domainkey.mail` | the public key Resend gives you (`p=MIGf…`) |
+| Ownership | `TXT` | `mail` | `brevo-code:<the code Brevo shows you>` |
+| SPF | `TXT` | `mail` | `v=spf1 include:spf.brevo.com mx ~all` |
+| DKIM | `TXT` | `brevo._domainkey.mail` | the public key Brevo gives you (`k=rsa; p=MIGf…`) |
 | DMARC | `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@sriramjewellery.in` |
 
-- The SPF records sit on the `send.` sub-domain Resend uses for bounces, so
-  they do not clash with any SPF record you already have on the root domain.
-  Never publish a second SPF record on the same name; merge instead.
+- These sit on the `mail.` sub-domain, so they do not clash with any SPF record
+  already on the root domain. Never publish a second SPF record on the same
+  name; merge instead.
 - Start DMARC at `p=none`, read the reports for a couple of weeks, then move to
   `p=quarantine`.
-- Wait until Resend shows the domain as **Verified** before setting
+- Wait until Brevo shows the domain as **Verified** before setting
   `EMAIL_FROM` to an address on it.
 
 ---

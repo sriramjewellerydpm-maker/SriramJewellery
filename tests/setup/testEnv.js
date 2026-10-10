@@ -6,8 +6,9 @@
  *    dotenv never overrides a variable that is already set, so every variable
  *    that file defines is set here first, and the ones that must be absent are
  *    deleted.
- * 2. Mocks every outbound channel: Razorpay SDK, axios (MSG91), Resend, the
- *    WhatsApp util, and global fetch. Nothing in the suite can leave the machine.
+ * 2. Mocks every outbound channel: Razorpay SDK, axios (MSG91), the email
+ *    provider's HTTP API, the WhatsApp util, and global fetch. Nothing in the
+ *    suite can leave the machine.
  */
 import { vi, beforeEach } from "vitest";
 
@@ -15,7 +16,13 @@ const mocks = vi.hoisted(() => {
   // dotenv.config() reads `${cwd}/.env`, and it fills in any variable that is
   // not set — including ones a test deletes on purpose. Run each test process
   // from a directory with no .env so the developer's real file is never read.
-  process.chdir(new URL("./no-dotenv/", import.meta.url).pathname);
+  // decodeURIComponent, because a URL percent-encodes its path: a repo checked
+  // out under a directory with a space ("BuildWithUs Project/") yields
+  // ".../BuildWithUs%20Project/..." and chdir fails with ENOENT — taking every
+  // test file in the suite down with it before a single test runs.
+  // Decoded inline rather than with fileURLToPath: this block is vi.hoisted(),
+  // so it executes before any ESM import of this file is initialised.
+  process.chdir(decodeURIComponent(new URL("./no-dotenv/", import.meta.url).pathname));
 
   const TEST_ENV = {
     NODE_ENV: "test",
@@ -30,7 +37,7 @@ const mocks = vi.hoisted(() => {
     RAZORPAY_WEBHOOK_SECRET: "test_razorpay_webhook_secret",
     ADMIN_PASSWORD: "AdminPass!2026",
     TEST_USER_PASSWORD: "UserPass!2026",
-    RESEND_API_KEY: "re_test_not_a_real_key",
+    BREVO_API_KEY: "xkeysib-test-not-a-real-key",
     EMAIL_FROM: "Test Shop <test@example.invalid>",
     CLOUDINARY_URL: "cloudinary://123456789012345:test_cloudinary_secret@testcloud",
     PUBLIC_SITE_URL: "http://localhost:5175",
@@ -63,7 +70,7 @@ const mocks = vi.hoisted(() => {
     MUST_BE_UNSET,
     razorpayCreate: vi.fn(),
     msg91Post: vi.fn(),
-    resendSend: vi.fn(),
+    emailSend: vi.fn(),
     whatsapp: {
       sendWhatsAppAlert: vi.fn(),
       sendOrderAlert: vi.fn(),
@@ -92,14 +99,6 @@ vi.mock("axios", async (importOriginal) => {
   return { ...actual, default: stub, post };
 });
 
-vi.mock("resend", () => ({
-  Resend: class ResendMock {
-    constructor() {
-      this.emails = { send: (...args) => mocks.resendSend(...args) };
-    }
-  },
-}));
-
 vi.mock("../../server/utils/whatsapp.js", () => ({
   sendWhatsAppAlert: (...a) => mocks.whatsapp.sendWhatsAppAlert(...a),
   sendOrderAlert: (...a) => mocks.whatsapp.sendOrderAlert(...a),
@@ -109,9 +108,62 @@ vi.mock("../../server/utils/whatsapp.js", () => ({
 
 // Anything that reaches for the network directly (the real whatsapp.js uses
 // fetch) fails loudly instead of sending.
-vi.stubGlobal("fetch", vi.fn(async (url) => {
-  throw new Error(`fetch is disabled in tests (attempted ${url})`);
-}));
+//
+// The email provider is the one exception: it is a plain HTTPS call, so it is
+// intercepted here rather than by mocking an SDK. `emailSend` receives a
+// PROVIDER-NEUTRAL view of the message — to/subject/text/html as the app thinks
+// of them — so assertions do not have to know Brevo's wire format, and the next
+// provider swap is a change in this file alone. The untranslated body is on
+// `.raw` for the few tests that check the wire format itself.
+const EMAIL_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+
+const networkFetch = vi.fn(async (url, init = {}) => {
+  const target = String(url);
+  if (!target.startsWith(EMAIL_ENDPOINT)) {
+    throw new Error(`fetch is disabled in tests (attempted ${target})`);
+  }
+
+  const raw = JSON.parse(init.body);
+  const address = (a) => (a?.name ? `${a.name} <${a.email}>` : a?.email);
+
+  return mocks.emailSend(
+    {
+      from: address(raw.sender),
+      to: (raw.to || []).map((t) => t.email),
+      subject: raw.subject,
+      text: raw.textContent,
+      html: raw.htmlContent,
+      replyTo: raw.replyTo ? address(raw.replyTo) : undefined,
+      raw,
+      headers: init.headers || {},
+    },
+    init
+  );
+});
+
+vi.stubGlobal("fetch", networkFetch);
+
+/**
+ * Re-apply the stub above. A suite that installs its own fetch (the WhatsApp
+ * tests do) must call this when it is done: vi.stubGlobal persists past the
+ * describe that set it, and the next suite to send an email would otherwise
+ * get that stub's response shape instead of the provider's.
+ */
+export const restoreFetch = () => vi.stubGlobal("fetch", networkFetch);
+
+/** A 2xx from the provider, shaped as Brevo shapes it. */
+export const emailAccepted = (messageId = "email_test") =>
+  new Response(JSON.stringify({ messageId }), {
+    status: 201,
+    headers: { "content-type": "application/json" },
+  });
+
+/** A non-2xx from the provider, e.g. emailRejected(402, "not_enough_credits"). */
+export const emailRejected = (status, code, message = "") =>
+  new Response(JSON.stringify({ code, message }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 
 let rzpCounter = 0;
 export const resetMocks = () => {
@@ -124,7 +176,7 @@ export const resetMocks = () => {
     status: "created",
   }));
   mocks.msg91Post.mockReset().mockResolvedValue({ data: { type: "success" } });
-  mocks.resendSend.mockReset().mockResolvedValue({ data: { id: "email_test" }, error: null });
+  mocks.emailSend.mockReset().mockResolvedValue(emailAccepted());
   for (const fn of Object.values(mocks.whatsapp)) fn.mockReset().mockResolvedValue(false);
 };
 

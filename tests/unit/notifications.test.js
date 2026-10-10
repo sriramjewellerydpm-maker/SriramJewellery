@@ -1,9 +1,10 @@
 /**
  * The real whatsapp.js and email.js. The rest of the suite mocks the WhatsApp
- * module outright; here the module runs for real with fetch/Resend stubbed, so
+ * module outright; here the module runs for real with fetch stubbed, so
  * its message building and failure handling are covered too.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { emailRejected, restoreFetch } from "../setup/testEnv.js";
 
 const WA_ENV = {
   WHATSAPP_TOKEN: "wa-test-token",
@@ -33,6 +34,9 @@ describe("whatsapp.js (real module)", () => {
 
   afterEach(() => {
     for (const k of Object.keys(WA_ENV)) delete process.env[k];
+    // This suite's fetch stub answers like the WhatsApp API and has no .json();
+    // leaving it in place breaks every email test that follows.
+    restoreFetch();
   });
 
   it("no-ops and returns false when unconfigured — never calls the network", async () => {
@@ -88,8 +92,8 @@ describe("whatsapp.js (real module)", () => {
   });
 });
 
-describe("email.js (real module, Resend mocked)", () => {
-  it("sends through Resend with a plain-text alternative", async () => {
+describe("email.js (real module, the provider's HTTP API mocked)", () => {
+  it("sends through the provider with a plain-text alternative", async () => {
     const email = await vi.importActual("../../server/utils/email.js");
     const r = await email.sendEmail({
       to: "a@b.test",
@@ -97,28 +101,58 @@ describe("email.js (real module, Resend mocked)", () => {
       html: "<p>Hello&nbsp;<b>there</b></p><style>x{}</style>",
     });
     expect(r).toEqual({ ok: true, id: "email_test" });
-    const sent = globalThis.__mocks.resendSend.mock.calls[0][0];
+    const sent = globalThis.__mocks.emailSend.mock.calls[0][0];
     expect(sent.to).toEqual(["a@b.test"]);
     expect(sent.text).toBe("Hello there");
     expect(email.isEmailLive()).toBe(true);
   });
 
   it("reports a provider error without throwing", async () => {
-    globalThis.__mocks.resendSend.mockResolvedValueOnce({ data: null, error: { message: "domain not verified" } });
+    globalThis.__mocks.emailSend.mockResolvedValueOnce(emailRejected(400, "invalid_parameter", "domain not verified"));
     const email = await vi.importActual("../../server/utils/email.js");
     expect(await email.sendEmail({ to: "a@b.test", subject: "s", html: "<p>x</p>" })).toEqual({
       ok: false,
-      error: "domain not verified",
+      error: "400 invalid_parameter domain not verified",
     });
   });
 
   it("reports a thrown network error without throwing", async () => {
-    globalThis.__mocks.resendSend.mockRejectedValueOnce(new Error("ECONNRESET"));
+    globalThis.__mocks.emailSend.mockRejectedValueOnce(new Error("ECONNRESET"));
     const email = await vi.importActual("../../server/utils/email.js");
     expect(await email.sendEmail({ to: "a@b.test", subject: "s", html: "<p>x</p>" })).toEqual({
       ok: false,
       error: "ECONNRESET",
     });
+  });
+
+  it("speaks Brevo's wire format: sender/to split into name+email, api-key header", async () => {
+    const email = await vi.importActual("../../server/utils/email.js");
+    await email.sendMail({
+      to: ["a@b.test", "c@d.test"],
+      subject: "Code",
+      text: "Your code is 123456",
+      html: "<p>Your code is 123456</p>",
+      replyTo: "Orders <orders@shop.test>",
+    });
+
+    const { raw, headers } = globalThis.__mocks.emailSend.mock.calls[0][0];
+    // EMAIL_FROM is "Test Shop <test@example.invalid>" — the display name and
+    // the address have to arrive as separate fields, not one RFC 5322 string.
+    expect(raw.sender).toEqual({ name: "Test Shop", email: "test@example.invalid" });
+    expect(raw.to).toEqual([{ email: "a@b.test" }, { email: "c@d.test" }]);
+    expect(raw.replyTo).toEqual({ name: "Orders", email: "orders@shop.test" });
+    expect(raw.textContent).toBe("Your code is 123456");
+    expect(raw.htmlContent).toBe("<p>Your code is 123456</p>");
+    // Brevo authenticates with its own header, not an Authorization bearer.
+    expect(headers["api-key"]).toBe(process.env.BREVO_API_KEY);
+  });
+
+  it("a bare EMAIL_FROM with no display name is still a valid sender", async () => {
+    const email = await vi.importActual("../../server/utils/email.js");
+    await withEnv({ EMAIL_FROM: "signin@shop.test" }, async () => {
+      await email.sendMail({ to: "a@b.test", subject: "s", text: "t" });
+    });
+    expect(globalThis.__mocks.emailSend.mock.calls[0][0].raw.sender).toEqual({ email: "signin@shop.test" });
   });
 
   it("refuses to send without to/subject/html", async () => {
@@ -148,34 +182,34 @@ describe("email.js (real module, Resend mocked)", () => {
     const email = await vi.importActual("../../server/utils/email.js");
     const r = await email.sendMail({ to: "a@b.test", subject: "Code", text: "Your code is 123456", tag: "sign-in-code" });
     expect(r).toEqual({ ok: true, id: "email_test" });
-    const sent = globalThis.__mocks.resendSend.mock.calls[0][0];
+    const sent = globalThis.__mocks.emailSend.mock.calls[0][0];
     expect(sent).toMatchObject({ to: ["a@b.test"], subject: "Code", text: "Your code is 123456" });
     expect(sent.from).toBe(process.env.EMAIL_FROM);
     expect(email.emailConfig().mode).toBe("live");
   });
 
   it("live: a provider rejection (e.g. daily quota) is a failure and is logged loudly", async () => {
-    globalThis.__mocks.resendSend.mockResolvedValueOnce({
-      data: null,
-      error: { statusCode: 429, name: "daily_quota_exceeded", message: "You have reached your daily email sending quota" },
-    });
+    // Brevo answers 402 "not_enough_credits" once the free tier's 300/day is gone.
+    globalThis.__mocks.emailSend.mockResolvedValueOnce(
+      emailRejected(402, "not_enough_credits", "You have reached your daily email sending quota")
+    );
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const email = await vi.importActual("../../server/utils/email.js");
     const r = await email.sendMail({ to: "a@b.test", subject: "s", text: "t", tag: "sign-in-code" });
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/daily_quota_exceeded/);
-    expect(spy.mock.calls.flat().join(" ")).toMatch(/EMAIL SEND FAILED — sign-in-code .*daily_quota_exceeded/);
+    expect(r.error).toMatch(/not_enough_credits/);
+    expect(spy.mock.calls.flat().join(" ")).toMatch(/EMAIL SEND FAILED — sign-in-code .*not_enough_credits/);
   });
 
   it("console: unconfigured + NODE_ENV=development prints the message and never calls the provider", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await withEnv({ NODE_ENV: "development", RESEND_API_KEY: undefined }, async () => {
+    await withEnv({ NODE_ENV: "development", BREVO_API_KEY: undefined }, async () => {
       const email = await vi.importActual("../../server/utils/email.js");
       expect(email.emailConfig().mode).toBe("console");
       const r = await email.sendMail({ to: "a@b.test", subject: "s", text: "Your code is 482913" });
       expect(r).toEqual({ ok: true, console: true });
     });
-    expect(globalThis.__mocks.resendSend).not.toHaveBeenCalled();
+    expect(globalThis.__mocks.emailSend).not.toHaveBeenCalled();
     expect(log.mock.calls.flat().join(" ")).toMatch(/482913/);
   });
 
@@ -183,14 +217,14 @@ describe("email.js (real module, Resend mocked)", () => {
     "unavailable: unconfigured + NODE_ENV=%s fails, prints nothing, never calls the provider",
     async (nodeEnv) => {
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
-      await withEnv({ NODE_ENV: nodeEnv, RESEND_API_KEY: undefined }, async () => {
+      await withEnv({ NODE_ENV: nodeEnv, BREVO_API_KEY: undefined }, async () => {
         const email = await vi.importActual("../../server/utils/email.js");
         expect(email.emailConfig().mode).toBe("unavailable");
         expect(email.canDeliverEmail()).toBe(false);
         const r = await email.sendMail({ to: "a@b.test", subject: "s", text: "Your code is 482913" });
         expect(r).toMatchObject({ ok: false, unavailable: true });
       });
-      expect(globalThis.__mocks.resendSend).not.toHaveBeenCalled();
+      expect(globalThis.__mocks.emailSend).not.toHaveBeenCalled();
       expect(log.mock.calls.flat().join(" ")).not.toMatch(/482913/);
     }
   );
@@ -228,7 +262,7 @@ describe("email.js (real module, Resend mocked)", () => {
     vi.resetModules();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await withEnv({ NODE_ENV: "production", RESEND_API_KEY: undefined }, async () => {
+      await withEnv({ NODE_ENV: "production", BREVO_API_KEY: undefined }, async () => {
         await vi.importActual("../../server/utils/email.js");
       });
       expect(spy.mock.calls.flat().join(" ")).toMatch(/FATAL: email is not configured/);

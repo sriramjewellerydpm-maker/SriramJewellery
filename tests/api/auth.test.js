@@ -39,7 +39,7 @@ afterEach(() => {
 const requestOtp = (email) => api().post("/api/auth/otp/request").send({ email });
 const verifyOtp = (email, otp, details = {}) => api().post("/api/auth/otp/verify").send({ email, otp, ...details });
 const DETAILS = () => ({ name: "Asha Raman", phone: uniquePhone() });
-const sentCount = () => mocks().resendSend.mock.calls.length;
+const sentCount = () => mocks().emailSend.mock.calls.length;
 const decode = (token) => jwt.decode(token);
 
 describe("POST /api/auth/otp/request (email)", () => {
@@ -58,7 +58,7 @@ describe("POST /api/auth/otp/request (email)", () => {
     expect(ttl).toBeGreaterThan(4.5 * 60_000);
     expect(ttl).toBeLessThanOrEqual(5 * 60_000);
 
-    const mail = mocks().resendSend.mock.calls.at(-1)[0];
+    const mail = mocks().emailSend.mock.calls.at(-1)[0];
     expect(mail.to).toEqual([typed.trim()]);
     expect(mail.subject).toMatch(/Sri Ram Jewellery/);
     expect(mail.text).toMatch(/Sri Ram Jewellery sign-in code is \d{6}/);
@@ -147,7 +147,7 @@ describe("POST /api/auth/otp/request (email)", () => {
   });
 
   it("email unavailable (no provider, not development) → 503, nothing stored", async () => {
-    setEnv("RESEND_API_KEY", undefined);
+    setEnv("BREVO_API_KEY", undefined);
     const res = await requestOtp(uniqueEmail());
     expect(res.status).toBe(503);
     expect(res.body.error).toMatch(/try again/i);
@@ -155,7 +155,7 @@ describe("POST /api/auth/otp/request (email)", () => {
   });
 
   it("provider rejection (e.g. quota) → 503, never success, and the unsent code is cleared", async () => {
-    mocks().resendSend.mockResolvedValueOnce({
+    mocks().emailSend.mockResolvedValueOnce({
       data: null,
       error: { statusCode: 429, name: "daily_quota_exceeded", message: "quota" },
     });
@@ -170,17 +170,17 @@ describe("POST /api/auth/otp/request (email)", () => {
   });
 
   it("provider throws (network) → 503", async () => {
-    mocks().resendSend.mockRejectedValueOnce(new Error("ECONNRESET"));
+    mocks().emailSend.mockRejectedValueOnce(new Error("ECONNRESET"));
     expect((await requestOtp(uniqueEmail())).status).toBe(503);
   });
 
   it("console mode (development, no provider): 200, the code is printed, and it verifies", async () => {
     setEnv("NODE_ENV", "development");
-    setEnv("RESEND_API_KEY", undefined);
+    setEnv("BREVO_API_KEY", undefined);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const email = uniqueEmail();
     expect((await requestOtp(email)).status).toBe(200);
-    expect(mocks().resendSend).not.toHaveBeenCalled();
+    expect(mocks().emailSend).not.toHaveBeenCalled();
     const code = log.mock.calls.flat().join("\n").match(/sign-in code is (\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
     expect((await verifyOtp(email, code)).status).toBe(200);
@@ -240,7 +240,7 @@ describe("test OTP (ALLOW_TEST_OTP + TEST_OTP_EMAILS)", () => {
   it("the bypass needs no email provider for an allowlisted address", async () => {
     const email = uniqueEmail("demo");
     setEnv("TEST_OTP_EMAILS", email);
-    setEnv("RESEND_API_KEY", undefined);
+    setEnv("BREVO_API_KEY", undefined);
     expect((await requestOtp(email)).status).toBe(200);
   });
 });
@@ -610,7 +610,7 @@ describe("password forgot / reset (admins only)", () => {
   const forgot = (email) => api().post("/api/auth/password/forgot").send({ email });
   const reset = (token, password) => api().post("/api/auth/password/reset").send({ token, password });
   const tokenFromLastEmail = () => {
-    const calls = mocks().resendSend.mock.calls;
+    const calls = mocks().emailSend.mock.calls;
     const html = calls[calls.length - 1][0].html;
     return html.match(/reset-password\?token=([0-9a-f]{64})/)[1];
   };
@@ -624,7 +624,7 @@ describe("password forgot / reset (admins only)", () => {
     expect(a.status).toBe(200);
     expect(a.body).toEqual(b.body);
     expect(a.body).toEqual(c.body);
-    expect(mocks().resendSend).toHaveBeenCalledTimes(1);
+    expect(mocks().emailSend).toHaveBeenCalledTimes(1);
   });
 
   it("stores only a hash, valid for 45 minutes, and emails the raw token", async () => {
@@ -681,7 +681,7 @@ describe("password forgot / reset (admins only)", () => {
 
   it("mail provider failure → 502 so the admin is not left waiting", async () => {
     const { user } = await makeAdmin();
-    mocks().resendSend.mockResolvedValueOnce({ data: null, error: { message: "down" } });
+    mocks().emailSend.mockResolvedValueOnce({ data: null, error: { message: "down" } });
     expect((await forgot(user.email)).status).toBe(502);
   });
 

@@ -188,9 +188,9 @@ export const makeAdmin = async (overrides = {}) => {
   return { user: user.toObject(), token: tokenFor(user), password: ADMIN_PASSWORD };
 };
 
-/** The sign-in code in the most recent email sent to `to` (Resend is mocked). */
+/** The sign-in code in the most recent email sent to `to` (the provider is mocked). */
 export const lastCodeSentTo = (to) => {
-  const calls = globalThis.__mocks.resendSend.mock.calls.filter(([m]) => [].concat(m.to).includes(to));
+  const calls = globalThis.__mocks.emailSend.mock.calls.filter(([m]) => [].concat(m.to).includes(to));
   const text = calls.at(-1)?.[0]?.text || "";
   return text.match(/sign-in code is (\d{6})/)?.[1] ?? null;
 };

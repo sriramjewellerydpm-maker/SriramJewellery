@@ -3,11 +3,11 @@
  *
  * Everything else calls `sendMail()` (or `sendEmail()` for the HTML reset
  * mail) and never touches a provider SDK. The provider is an adapter in
- * PROVIDERS below; swapping Resend for another service is a change here alone.
+ * PROVIDERS below; swapping Brevo for another service is a change here alone.
  *
  * Configuration (env, never hardcoded):
- *   EMAIL_PROVIDER   adapter name, default "resend"
- *   RESEND_API_KEY   the Resend key
+ *   EMAIL_PROVIDER   adapter name, default "brevo"
+ *   BREVO_API_KEY    the Brevo (v3) API key
  *   EMAIL_FROM       e.g. "Sri Ram Jewellery <orders@sriramjewellery.in>".
  *                    Must be on the shop's own domain — never a free webmail
  *                    address, which fails the receiving side's DMARC checks.
@@ -34,30 +34,67 @@
  * Failures never throw. Callers decide whether a failure matters.
  */
 
-import { Resend } from "resend";
 import dotenv from "dotenv";
 dotenv.config();
 
 // ─── Provider adapters ───────────────────────────────────────────────────────
 
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+
+/**
+ * Brevo wants a sender as `{ name, email }`, while the rest of the app passes
+ * one RFC 5322 string ("Sri Ram Jewellery <signin@mail.sriramjewellery.in>").
+ * A bare address is equally valid, so the name is optional.
+ */
+const parseAddress = (value) => {
+  const raw = String(value ?? "").trim();
+  const angled = raw.match(/^(.*?)<\s*([^>]+?)\s*>$/);
+  if (!angled) return { email: raw };
+
+  const name = angled[1].trim().replace(/^["']|["']$/g, "").trim();
+  return name ? { name, email: angled[2] } : { email: angled[2] };
+};
+
 const PROVIDERS = {
-  resend: {
-    label: "Resend",
-    isConfigured: () => Boolean(process.env.RESEND_API_KEY),
+  brevo: {
+    label: "Brevo",
+    isConfigured: () => Boolean(process.env.BREVO_API_KEY),
     send: async ({ from, to, subject, text, html, replyTo }) => {
-      const client = new Resend(process.env.RESEND_API_KEY);
-      const { data, error } = await client.emails.send({ from, to, subject, text, html, replyTo });
-      if (error) {
-        // Resend reports failures (including quota) in the payload, not by throwing.
-        const reason = [error.statusCode, error.name, error.message].filter(Boolean).join(" ");
-        return { ok: false, error: reason || String(error) };
+      const payload = {
+        sender: parseAddress(from),
+        to: to.map(parseAddress),
+        subject,
+        textContent: text,
+      };
+      if (html) payload.htmlContent = html;
+      if (replyTo) payload.replyTo = parseAddress(replyTo);
+
+      const res = await fetch(BREVO_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "api-key": process.env.BREVO_API_KEY,
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // Brevo signals failure with the HTTP status rather than in the payload,
+      // so a non-2xx is the only reliable signal — the body can be empty or not
+      // even JSON. The daily cap arrives here as 402 "not_enough_credits".
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const reason = [res.status, body?.code, body?.message].filter(Boolean).join(" ");
+        return { ok: false, error: reason || `HTTP ${res.status}` };
       }
-      return { ok: true, id: data?.id };
+
+      const body = await res.json().catch(() => null);
+      return { ok: true, id: body?.messageId };
     },
   },
 };
 
-const providerKey = () => (process.env.EMAIL_PROVIDER || "resend").trim().toLowerCase();
+const providerKey = () => (process.env.EMAIL_PROVIDER || "brevo").trim().toLowerCase();
 
 // Sending as a webmail address from our servers fails that domain's DMARC, so
 // the mail is junked or dropped. The sender must be the shop's own domain.

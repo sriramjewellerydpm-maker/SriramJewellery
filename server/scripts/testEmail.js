@@ -3,12 +3,12 @@
  *
  *   node server/scripts/testEmail.js you@example.com
  *
- * With RESEND_API_KEY and EMAIL_FROM set it sends a real message and prints the
+ * With BREVO_API_KEY and EMAIL_FROM set it sends a real message and prints the
  * provider's id. In development without them it prints the message instead
  * (console mode). Anywhere else without them it fails, exactly as sign-in
  * codes would — see "Before going live" in README.md.
  *
- * EMAIL_FROM must be on a domain verified in Resend (never a gmail.com or other
+ * EMAIL_FROM must be on a domain verified in Brevo (never a gmail.com or other
  * webmail address).
  */
 
@@ -26,7 +26,7 @@ if (!to) {
 
 const run = async () => {
   console.log(`Mode: ${isEmailLive() ? "LIVE — a real email will be sent" : "DRY RUN — nothing will be sent"}`);
-  console.log(`From: ${process.env.EMAIL_FROM || "(default onboarding@resend.dev)"}`);
+  console.log(`From: ${process.env.EMAIL_FROM || "(not set)"}`);
   console.log(`To:   ${to}\n`);
 
   const result = await sendEmail({
@@ -48,13 +48,13 @@ const run = async () => {
   console.log("\nResult:", JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    console.error("\n❌ Send failed. Check RESEND_API_KEY and that EMAIL_FROM uses a verified domain.");
+    console.error("\n❌ Send failed. Check BREVO_API_KEY and that EMAIL_FROM uses a sender verified in Brevo.");
     process.exit(1);
   }
 
   console.log(
     result.console
-      ? "\n✅ Printed to the console (development, no provider configured). Set RESEND_API_KEY and EMAIL_FROM to send for real."
+      ? "\n✅ Printed to the console (development, no provider configured). Set BREVO_API_KEY and EMAIL_FROM to send for real."
       : `\n✅ Sent. Provider message id: ${result.id}`
   );
 };
