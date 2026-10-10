@@ -171,7 +171,7 @@ export const LEGAL_PAGES = {
       {
         heading: "Your account",
         body: [
-          "Your account is tied to your mobile number and is secured by a one-time code sent to it. Anyone able to receive codes on that number can reach your account, so keep control of the number and tell us promptly if you lose it.",
+          "Your account is tied to your email address and is secured by a one-time code sent to it. Anyone able to read mail at that address can reach your account, so keep control of the mailbox and tell us promptly if you lose access to it.",
           "You may hold one active session at a time. Signing in on a new device ends the session on the previous one.",
         ],
       },
@@ -181,6 +181,14 @@ export const LEGAL_PAGES = {
           "Prices for gold and silver pieces are not fixed. They are calculated live from the metal rate we publish, the weight of the piece, its wastage percentage and applicable GST. The price you see can therefore change between visits as the metal rate moves.",
           "The price that binds an order is the one calculated by us at the moment your order is placed. We recalculate every line on the server when you check out; a price displayed earlier in your session is indicative.",
           "Some pieces are marked Price on Request. These are quoted individually and cannot be purchased directly.",
+        ],
+      },
+      {
+        heading: "Payment is online and in advance",
+        body: [
+          "Orders are paid for in full at checkout, through Razorpay. We do not offer cash on delivery.",
+          "An order that is not paid for within 30 minutes is released automatically and marked expired, and the stock it was holding returns to sale.",
+          "Once an order is paid it cannot be cancelled — please see the Cancellation Policy before you pay.",
         ],
       },
       {
@@ -220,23 +228,26 @@ export const LEGAL_PAGES = {
   "shipping-policy": {
     title: "Shipping Policy",
     eyebrow: "Getting it to you",
-    summary: "Where we deliver, how long it takes, and how your piece travels insured.",
+    summary: "Orders travel by India Post. Where we deliver, how long it takes, and who carries the risk.",
     lastUpdated: PLACEHOLDER_DATE,
     sections: [
       {
-        heading: "Where we deliver",
+        heading: "How your order travels",
+        body: [
+          "Every order is dispatched through India Post. You will be given the tracking number for your consignment once it has been handed over.",
+        ],
         needsInput: {
           from: "client",
-          what: "Serviceable pincodes or states, and whether international shipping is offered.",
-          why: "Customers need to know before they pay, and the answer drives which tax and customs wording is required.",
+          what: "Which India Post service is used (Speed Post, Registered Post or Insured Post), and whether delivery is offered outside India.",
+          why: "The service decides the cover carried and the claims route, and only Insured Post covers the declared value of jewellery. Customers also need to know before they pay whether their pincode is served.",
         },
       },
       {
         heading: "Dispatch and delivery times",
         needsInput: {
           from: "client",
-          what: "Dispatch window for in-stock pieces, lead time for made-to-order pieces, and the delivery estimate per region.",
-          why: "Committed delivery timelines are enforceable promises — these must come from whoever runs fulfilment.",
+          what: "Dispatch window for in-stock pieces, lead time for made-to-order pieces, and the delivery estimate by region once India Post has the parcel.",
+          why: "Committed delivery timelines are enforceable promises — these must come from whoever runs fulfilment, and India Post's transit times vary widely by destination.",
         },
       },
       {
@@ -252,10 +263,13 @@ export const LEGAL_PAGES = {
       },
       {
         heading: "Insurance and transit risk",
+        body: [
+          "A parcel that arrives damaged, opened or tampered with must be reported to us with the unboxing video described in the Return & Exchange Policy. Without that recording a claim cannot be raised against the carrier.",
+        ],
         needsInput: {
           from: "client",
-          what: "Who bears the risk in transit, the insurance cover carried, and what a customer must do if a parcel arrives damaged or tampered with (for example, recording an unboxing video).",
-          why: "For high-value jewellery this is the single most disputed clause. The claims procedure has to match what your insurer actually requires.",
+          what: "Who bears the risk while the parcel is with India Post, the cover actually carried on a consignment, and the deadline for reporting a damaged or missing parcel.",
+          why: "For high-value jewellery this is the single most disputed clause, and the claims procedure has to match what India Post and your insurer require.",
         },
       },
       {
@@ -271,39 +285,45 @@ export const LEGAL_PAGES = {
   "return-policy": {
     title: "Return & Exchange Policy",
     eyebrow: "If it isn't right",
-    summary: "When a piece can be returned or exchanged, and how a refund reaches you.",
+    summary: "Returns are accepted for damaged or defective pieces only, and an unboxing video is required.",
     lastUpdated: PLACEHOLDER_DATE,
     sections: [
       {
-        heading: "Return window",
+        heading: "Only a damaged or defective piece can be returned",
+        body: [
+          "A piece can be returned only if it reaches you damaged or defective. We do not accept returns or exchanges for a change of mind, for fit, or because a piece looks different in person from its photographs.",
+          "Pieces bought against a live metal rate, made-to-order and customised work are covered on the same basis: a manufacturing fault or transit damage, and nothing else.",
+        ],
         needsInput: {
           from: "client",
-          what: "The number of days from delivery within which a return may be raised, and the condition the piece must be in (tags intact, unworn, original packaging, certificate included).",
-          why: "The core commercial term of the policy. It must be the client's decision.",
+          what: "The number of days from delivery within which a defect must be reported.",
+          why: "Without a stated deadline the window is open indefinitely, and a claim months after delivery cannot be told apart from ordinary wear.",
         },
       },
       {
-        heading: "What cannot be returned",
+        heading: "An unboxing video is required",
+        body: [
+          "A continuous, unedited video of the parcel being opened is mandatory for every return. Start recording before the outer packaging is broken, keep the shipping label visible at the start, and keep recording until the piece is fully unwrapped.",
+          "Without that video a claim cannot be raised with the carrier or our insurer, and the return cannot be accepted. This is the single most important step — please record it for every order, whether or not you expect a problem.",
+        ],
+      },
+      {
+        heading: "How to raise a return",
+        body: [
+          "Contact us with your order number and the unboxing video. Returns are handled by our team; there is no self-serve returns option on the site.",
+        ],
         needsInput: {
           from: "client",
-          what: "Exclusions — typically customised or made-to-order pieces, engraved items, earrings on hygiene grounds, and pieces bought against a live rate.",
-          why: "Exclusions are only enforceable if disclosed before purchase.",
+          what: "The channel a customer should use (email, phone or WhatsApp), who arranges the return shipment, and who pays for it.",
+          why: "The site has no returns flow, so the stated process has to match what your team can really operate.",
         },
       },
       {
         heading: "How refunds are calculated",
         needsInput: {
           from: "client",
-          what: "Whether a refund is at the original purchase price or the prevailing metal rate on the return date, and which charges (making, wastage, GST, shipping) are refundable.",
-          why: "With rate-linked pricing this is genuinely ambiguous and is the most common source of dispute. It needs an explicit, unambiguous answer.",
-        },
-      },
-      {
-        heading: "How to raise a return",
-        needsInput: {
-          from: "client",
-          what: "The actual process — self-serve from the order page, email, or phone — and who arranges pickup.",
-          why: "The site does not currently have a self-serve returns flow, so the stated process has to match what your team can really operate.",
+          what: "For an accepted defective return: whether the refund is at the original purchase price or the prevailing metal rate on the return date, which charges (making, wastage, GST, shipping) are refundable, and whether a replacement is offered instead of a refund.",
+          why: "With rate-linked pricing this is genuinely ambiguous and is the most common source of dispute. It needs an explicit answer even when returns are limited to faults.",
         },
       },
       {
@@ -323,42 +343,42 @@ export const LEGAL_PAGES = {
   // ─── Cancellation ───────────────────────────────────────────────────────
   "cancellation-policy": {
     title: "Cancellation Policy",
-    eyebrow: "Changing your mind",
-    summary: "Cancelling an order before it ships, and what happens to your payment.",
+    eyebrow: "Before you pay",
+    summary: "Orders cannot be cancelled once placed. Please check everything before you pay.",
     lastUpdated: PLACEHOLDER_DATE,
     sections: [
       {
-        heading: "Cancelling before dispatch",
-        needsInput: {
-          from: "client",
-          what: "The window in which a customer may cancel without charge, and how they do it.",
-          why: "Razorpay requires a published cancellation policy for account activation, and the window is a commercial choice.",
-        },
+        heading: "Orders cannot be cancelled",
+        body: [
+          "Once an order is placed and paid for, it cannot be cancelled and the amount paid is not refundable on a change of mind. Please check your selection, the weight and specification of the piece, and your delivery address carefully before completing payment.",
+          "This applies to every piece in the catalogue, whether it is held in stock or made to order.",
+        ],
       },
       {
-        heading: "Cancelling made-to-order pieces",
-        needsInput: {
-          from: "client",
-          what: "Whether bespoke or made-to-order work can be cancelled once begun, and any deduction applied.",
-          why: "Work already carried out on a custom piece cannot be resold, so this usually differs from the standard window.",
-        },
+        heading: "This does not affect a faulty piece",
+        body: [
+          "Cancellation and returns are separate. A piece that reaches you damaged or defective is covered by the Return & Exchange Policy, and nothing in this policy limits that.",
+        ],
       },
       {
         heading: "Cancellation by us",
-        needsInput: {
-          from: "client",
-          what: "Circumstances in which you may cancel an order — stock unavailability, failed verification, an obvious pricing error, an unserviceable address.",
-          why: "Pairs with the acceptance clause in the Terms; a live metal rate makes pricing errors a real possibility.",
-        },
-      },
-      {
-        heading: "Refunds on cancellation",
         body: [
-          "Where payment has been taken, cancellation refunds are returned to the original payment method through Razorpay.",
+          "An order that is not paid for within 30 minutes of being placed is released automatically and marked expired, so the stock it was holding goes back on sale. No payment is taken, and nothing is charged.",
         ],
         needsInput: {
           from: "client",
-          what: "Any charge retained on cancellation, and the timeline.",
+          what: "The other grounds on which you may cancel a PAID order — stock unavailability, failed verification, an obvious pricing error, an unserviceable pincode — and whether the customer is offered an alternative piece or a refund.",
+          why: "Now that the customer cannot cancel, this is the only cancellation route left, so it is the clause disputes will turn on. A live metal rate makes a mispriced order a real possibility.",
+        },
+      },
+      {
+        heading: "Refunds where we cancel",
+        body: [
+          "Where we cancel an order that has already been paid for, the payment is returned in full to the original payment method through Razorpay.",
+        ],
+        needsInput: {
+          from: "client",
+          what: "The number of business days from our cancellation to the refund being initiated.",
           why: "Must be consistent with the Return & Exchange Policy.",
         },
       },

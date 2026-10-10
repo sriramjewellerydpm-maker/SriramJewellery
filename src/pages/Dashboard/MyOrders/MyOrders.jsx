@@ -1,76 +1,11 @@
 import React from "react";
 import useOrders from "../../../hooks/useOrders";
 import { Link, useNavigate } from "react-router-dom";
-import Swal from "sweetalert2";
-import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import { ListSkeleton } from "../../../components/Skeleton/Skeleton";
 
 const MyOrders = () => {
-  const { orders, isOrdersLoading, refetch } = useOrders();
-  const [axiosSecure] = useAxiosSecure();
+  const { orders, isOrdersLoading } = useOrders();
   const navigate = useNavigate();
-
-  const handleDeleteOrder = (order, e) => {
-    e.stopPropagation();
-    const today = new Date();
-    const orderDate = new Date(order.createdAt);
-    const diffInDays = Math.floor((today - orderDate) / (1000 * 60 * 60 * 24));
-
-    if (diffInDays > 7) {
-      Swal.fire({
-        title: "Too Late",
-        text: "No orders can be cancelled after 7 days of ordering.",
-        icon: "error",
-        confirmButtonColor: "#8B6447",
-        confirmButtonText: "Ok, take me back",
-      });
-    } else {
-      // A paid online order is refunded by hand by the shop — say so before
-      // the customer commits, and never promise an instant refund. No
-      // timeline either until the owner confirms one: the cancellation policy
-      // still lists it as an open question.
-      const paidOnline = Boolean(order.paidAt) && String(order.paymentMethod || "").toLowerCase() !== "cod";
-      const amount = `₹${Number(order.totalAmount || 0).toLocaleString("en-IN")}`;
-      const refundNote = paidOnline
-        ? `<br><br>You paid ${amount} online. The shop refunds it to your original payment method <b>by hand</b> — it is not instant — and will contact you about your refund.`
-        : "";
-      Swal.fire({
-        title: "Cancel Order?",
-        html: `Your order will be cancelled.${refundNote}<br><br>See our <a href="/legal/cancellation-policy" target="_blank" class="underline text-primary">cancellation policy</a>.`,
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#8B6447",
-        cancelButtonColor: "#c8a684",
-        confirmButtonText: "Yes, cancel it!",
-      }).then((result) => {
-        if (result.isConfirmed) {
-          axiosSecure
-            .patch(`/orders/${order._id}/cancel`)
-            .then((res) => {
-              if (res.data.success) {
-                Swal.fire({
-                  title: "Cancelled",
-                  text: paidOnline
-                    ? `Your order has been cancelled. Your refund of ${amount} is pending: the shop processes it by hand and will contact you about it.`
-                    : "Your order has been cancelled successfully",
-                  icon: "success",
-                  confirmButtonColor: "#8B6447",
-                });
-                refetch();
-              }
-            })
-            .catch((error) => {
-              Swal.fire({
-                title: "Couldn't Cancel",
-                text: error.response?.data?.error || "Something went wrong. Please try again.",
-                icon: "error",
-                confirmButtonColor: "#8B6447",
-              });
-            });
-        }
-      });
-    }
-  };
 
   const navigateToOrder = (orderId) => {
     navigate("/order-success", { state: { orderId } });
@@ -242,14 +177,6 @@ const MyOrders = () => {
                     {timelineText}
                   </p>
                   <div className="flex gap-4 w-full sm:w-auto">
-                    {isProcessing && (
-                      <button 
-                        onClick={(e) => handleDeleteOrder(order, e)}
-                        className="font-button-text text-button-text text-error/80 border border-error/30 px-4 py-2 hover:bg-error hover:text-white transition-ui uppercase tracking-widest flex items-center gap-2 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">cancel</span> Cancel Order
-                      </button>
-                    )}
                     <button 
                       onClick={(e) => { e.stopPropagation(); navigateToOrder(order._id); }}
                       className="flex-1 sm:flex-none font-button-text text-button-text bg-primary text-white px-6 py-2 hover:bg-primary/90 transition-ui uppercase tracking-widest cursor-pointer"

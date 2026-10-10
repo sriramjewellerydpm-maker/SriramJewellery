@@ -49,8 +49,6 @@ const Checkout = () => {
       ? Number(cartSubtotal.gstAmount)
       : null;
 
-  // Card and UPI are both paid through the existing Razorpay checkout.
-  const isOnlineMethod = paymentMethod === "card" || paymentMethod === "upi";
   // Once Razorpay reports success the server has ALREADY placed the order
   // (paid, stock reserved, owner alerted). From then on the payment method is
   // locked and Complete Order only finishes that order — switching to Cash on
@@ -79,63 +77,28 @@ const Checkout = () => {
   );
 
   const handlePlaceOrder = () => {
-    // An unpaid card/UPI checkout must never fall through to POST /api/orders,
-    // which places cash-on-delivery orders only.
-    if (isOnlineMethod && !isPaid) return;
+    // Every checkout is paid through Razorpay first, so Complete Order only
+    // ever finishes an order that already exists and is already paid. There is
+    // no unpaid path left to fall through to: POST /api/orders placed cash-on-
+    // delivery orders and the shop no longer offers it.
+    if (!isPaid) return;
     setIsPlacingOrder(true);
 
-    // Paid through Razorpay: the order already exists (created and verified in
-    // Payment.jsx). Finish it — whatever tile is highlighted — and never post
-    // another one.
-    if (isPaid) {
-      const goToConfirmation = () => {
-        navigate("/order-success", {
-          state: {
-            orderStatus: "success",
-            from: location,
-            orderId: paymentInfo.orderId,
-          },
-        });
-        setPaymentInfo(null);
-        refetch();
-      };
+    // The order already exists, created and verified in Payment.jsx. Finish it
+    // — whatever tile is highlighted — and never post another one.
+    navigate("/order-success", {
+      state: {
+        orderStatus: "success",
+        from: location,
+        orderId: paymentInfo.orderId,
+      },
+    });
 
-      // The server took the paid items out of the bag when it confirmed the
-      // payment (B21), and left it alone for a Buy Now — so nothing is
-      // cleared here; the refetch shows the bag as it now is.
-      goToConfirmation();
-      return;
-    }
-
-    axiosSecure
-      .post("/orders", {
-        name: user?.name || userFromDB?.name || "Customer",
-        paymentMethod,
-        items: checkoutItems, // Backend expects `items`
-        buyNow: !!buyNowItem,
-        shippingAddress: userFromDB?.shippingAddress,
-      })
-      .then((res) => {
-        if (res.data.success) {
-          navigate("/order-success", {
-            state: {
-              orderStatus: "success",
-              from: location,
-              orderId: res.data.data._id,
-            },
-          });
-          setPaymentInfo(null);
-          refetch();
-        } else {
-          toast.error(res.data.error || "Failed to place order.");
-          setIsPlacingOrder(false);
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-        toast.error(error.response?.data?.error || "Failed to place order.");
-        setIsPlacingOrder(false);
-      });
+    // The server took the paid items out of the bag when it confirmed the
+    // payment (B21), and left it alone for a Buy Now — so nothing is cleared
+    // here; the refetch shows the bag as it now is.
+    setPaymentInfo(null);
+    refetch();
   };
 
   return (
@@ -266,24 +229,19 @@ const Checkout = () => {
                 {paymentMethod === 'upi' && onlinePaymentBox}
               </label>
 
-              <label 
-                className={`flex items-center justify-between p-5 bg-white border cursor-pointer hover:border-primary transition-ui group ${paymentMethod === 'cod' ? 'border-primary' : 'border-outline-variant'}`}
-                onClick={() => choosePaymentMethod('cod')}
-                aria-disabled={isPaid && paymentMethod !== 'cod'}
-              >
-                <div className="flex items-center gap-4">
-                  <input 
-                    checked={paymentMethod === 'cod'}
-                    readOnly
-                    className="text-primary focus:ring-primary w-5 h-5 border-outline-variant" 
-                    type="radio" 
-                    name="payment" 
-                  />
-                  <span className="font-label-caps text-on-surface">CASH ON DELIVERY</span>
-                </div>
-                <span className="material-symbols-outlined text-on-surface-variant">payments</span>
-              </label>
             </div>
+
+            {/* Said plainly here, not only in the policy: a customer who
+                expects to pay the courier should find out now, not when the
+                parcel does not arrive. */}
+            <p className="mt-5 font-body-base text-[13px] text-on-surface-variant">
+              We do not offer cash on delivery — every order is paid in full here.
+              Once paid, an order cannot be cancelled, so please check your
+              selection and address before you pay.{" "}
+              <Link to="/legal/cancellation-policy" className="underline hover:text-primary transition-colors">
+                Cancellation Policy
+              </Link>
+            </p>
           </section>
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-8 border-t border-outline-variant/30">
@@ -295,9 +253,9 @@ const Checkout = () => {
               className="w-full md:w-auto px-12 py-5 bg-primary-container text-on-primary-container font-button-text text-button-text uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-ui shadow-lg shadow-primary/10 text-center disabled:opacity-50 disabled:hover:scale-100 flex justify-center items-center gap-2"
               onClick={handlePlaceOrder}
               disabled={
-                // Card and UPI are paid through Razorpay first; Complete Order
+                // Every order is paid through Razorpay first; Complete Order
                 // only confirms what has already been paid.
-                (isOnlineMethod && !isPaid) ||
+                !isPaid ||
                 !userFromDB?.shippingAddress ||
                 isPlacingOrder ||
                 !checkoutItems?.length

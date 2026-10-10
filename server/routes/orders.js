@@ -2,17 +2,12 @@ import express from "express";
 import { Order } from "../models/Order.js";
 import { User } from "../models/User.js";
 import { Cart } from "../models/Cart.js";
-import { Product } from "../models/Product.js";
-import { computePrice } from "../utils/computePrice.js";
-import { getRateStatus, findUnpriceableMetalsForProducts, rateUnavailableMessage } from "../utils/getRates.js";
 import { verifyJWT, requireAdmin } from "../middleware/auth.js";
-import { sendOrderAlert, sendOrderApprovalAlert, sendRefundRequiredAlert } from "../utils/whatsapp.js";
-import { reserveStock, releaseStock, outOfStockMessage } from "../utils/stock.js";
+import { sendOrderApprovalAlert, sendRefundRequiredAlert } from "../utils/whatsapp.js";
+import { releaseStock } from "../utils/stock.js";
 import { checkStatusChange, checkApprove, checkReject } from "../utils/orderStatus.js";
-import { nextOrderId, isOrderIdClash, ORDER_ID_ATTEMPTS } from "../utils/orderId.js";
 import {
   validate,
-  createOrderSchema,
   orderStatusSchema,
   orderApprovalSchema,
   objectIdParam,
@@ -86,165 +81,21 @@ router.get("/:id", verifyJWT, async (req, res) => {
   }
 });
 
-// POST /api/orders — create order with server-side price verification
-router.post("/", verifyJWT, validate(createOrderSchema), async (req, res) => {
-  try {
-    const { items, shippingAddress, name } = req.body;
-
-    if (!items || !items.length) {
-      return res.status(400).json({ error: "Order must contain at least one item" });
-    }
-
-
-    // Refuse rather than price against a rate that cannot be trusted: a stale
-    // one yields a confident, wrong number (how ₹96/gram gold reached
-    // checkout), and a missing one leaves nothing to price from at all.
-    const { rateMap, staleMetals } = await getRateStatus();
-    const affected = findUnpriceableMetalsForProducts(
-      await Product.find({
-        $or: items.map((i) => ({
-          $or: [
-            { _id: i.productId?.match(/^[0-9a-fA-F]{24}$/) ? i.productId : null },
-            { productId: i.productId },
-          ].filter(Boolean),
-        })).flat(),
-      }).lean(),
-      { rateMap, staleMetals }
-    );
-    if (affected.length) {
-      return res.status(503).json({ error: rateUnavailableMessage(affected) });
-    }
-
-    // Server-side price verification (PRD: price never trusted from frontend)
-    // — priced from the same rates just checked.
-    let totalAmount = 0;
-    let gstAmount = 0;
-    const verifiedItems = [];
-
-    for (const item of items) {
-      const product = await Product.findOne({
-        $or: [
-          { _id: item.productId?.match(/^[0-9a-fA-F]{24}$/) ? item.productId : null },
-          { productId: item.productId }
-        ].filter(Boolean)
-      }).lean();
-
-      if (!product) {
-        return res.status(400).json({ error: `Product not found: ${item.productId}` });
-      }
-
-      if (product.isQuoteOnly) {
-        return res.status(400).json({ error: `Quote-only products cannot be ordered directly: ${product.name}` });
-      }
-
-      // Switched off by the owner: not for sale, even from an old bag or tab.
-      if (product.isActive === false) {
-        return res.status(400).json({ error: `${product.name} is no longer available. Please remove it from your order.` });
-      }
-
-      const priceData = computePrice(product, rateMap);
-      // Never fall back to the stored `price` for a weighted product: that field
-      // is the making charge, not the customer price. The rate check above
-      // makes this unreachable; it stays as the last line of defence.
-      if (!priceData && product.weight) {
-        return res.status(503).json({ error: rateUnavailableMessage([product.metalType || "gold"]) });
-      }
-      // A weightless product sells at its stored price. Without one there is
-      // nothing to charge — this used to reach the database as NaN and 500.
-      const serverPrice = priceData?.finalPrice;
-      // For a weightless piece a stored price of 0 is no price either: a blank
-      // admin field used to save as 0, which would have sold it for nothing.
-      // (Weighted pieces are untouched here — see B4-residual.)
-      if (!Number.isFinite(serverPrice) || (!product.weight && serverPrice <= 0)) {
-        return res.status(400).json({ error: `${product.name} cannot be ordered right now — it has no price set.` });
-      }
-      const quantity = item.quantity || 1;
-      const lineTotal = serverPrice * quantity;
-
-      // Calculate GST for this item
-      const gstPercent = product.gstPercent || 0;
-      // The GST row the customer was shown (computePrice's breakdown), so the
-      // order's GST matches the page. Weightless pieces have no breakdown.
-      const unitGst = priceData.priceBreakdown
-        ? priceData.priceBreakdown.gst
-        : serverPrice - serverPrice / (1 + gstPercent / 100);
-      gstAmount += unitGst * quantity;
-
-      totalAmount += lineTotal;
-
-      verifiedItems.push({
-        productId: product.productId || product._id.toString(),
-        name: product.name,
-        image: product.img || product.image || (product.images && product.images[0]),
-        quantity,
-        unitPrice: serverPrice,
-        weight: product.weight,
-        metalType: product.metalType,
-        category: product.category,
-      });
-    }
-
-    // Take stock before the order exists. A refusal here leaves nothing behind —
-    // reserveStock rolls back its own partial work.
-    const reservation = await reserveStock(verifiedItems);
-    if (!reservation.ok) {
-      return res.status(409).json({ error: outOfStockMessage(reservation) });
-    }
-
-    // Profile phone, for the owner's delivery call (see Order.phone).
-    const customer = await User.findById(req.user.userId).select("phone").lean();
-
-    const newOrder = new Order({
-      phone: customer?.phone || undefined,
-      userId: req.user.userId,
-      email: req.user.email,
-      name: name || undefined,
-      items: verifiedItems,
-      totalAmount: Math.round(totalAmount),
-      gstAmount: Math.round(gstAmount),
-      shippingAddress,
-      // createOrderSchema admits only cash on delivery, so this route never
-      // writes an online order — those exist only once Razorpay has one.
-      paymentMethod: "cod",
-      paymentStatus: "unpaid",
-      orderStatus: "processing",
-      stockReserved: true,
-    });
-
-    // SRJ-YYYYMMDD-NNNN from an atomic daily counter. A clash with a number
-    // already stored (e.g. after the counter was reset) takes the next one.
-    for (let attempt = 1; ; attempt += 1) {
-      newOrder.orderId = await nextOrderId();
-      try {
-        await newOrder.save();
-        break;
-      } catch (saveError) {
-        if (isOrderIdClash(saveError) && attempt < ORDER_ID_ATTEMPTS) continue;
-        // Stock is already out of the catalogue but no order holds it. Put it
-        // back rather than quietly losing inventory to a failed write.
-        await releaseStock(verifiedItems);
-        throw saveError;
-      }
-    }
-
-    // Owner alert, fire-and-forget. Card orders are announced from the payment
-    // verification handler instead, so an abandoned checkout raises nothing.
-    // A notification must never be the reason a saved order reports failure.
-    sendOrderAlert({ order: newOrder }).catch((err) =>
-      console.error("Owner order alert failed (non-critical):", err.message)
-    );
-
-    // Clear cart after successful order — but a "Buy Now" purchase bypasses the
-    // cart entirely, so it must leave whatever the user had saved intact.
-    if (!req.body.buyNow) {
-      await Cart.deleteMany({ userId: req.user.userId });
-    }
-
-    res.status(201).json({ success: true, data: newOrder });
-  } catch (error) {
-    console.error("Create order error:", error);
-    res.status(500).json({ error: "Failed to create order" });
-  }
+// POST /api/orders — withdrawn.
+//
+// This route only ever created cash-on-delivery orders (see the COD-only rule
+// in createOrderSchema). The shop no longer offers cash on delivery: every
+// order is paid in full at checkout, so orders are created by
+// POST /api/payment/create-order and confirmed by Razorpay.
+//
+// Kept as an explicit refusal rather than deleted so a stale client gets the
+// reason instead of a 404 — and so nothing can place an unpaid order that the
+// customer sees as confirmed. The server-side price verification this route
+// used to perform lives in the payment route, which does its own.
+router.post("/", verifyJWT, async (req, res) => {
+  res.status(410).json({
+    error: "Cash on delivery is no longer offered. Please complete payment at checkout.",
+  });
 });
 
 // PATCH /api/orders/:id/status — admin update order status
@@ -342,43 +193,20 @@ router.patch("/:id/approval", verifyJWT, requireAdmin, validate(orderApprovalSch
   }
 });
 
-// PATCH /api/orders/:id/cancel — user cancels their own order (within 7 days, while still processing)
+// PATCH /api/orders/:id/cancel — withdrawn.
+//
+// The published Cancellation Policy is that an order cannot be cancelled once
+// it is placed and paid for. This endpoint is kept, rather than deleted, so a
+// client still holding the old Cancel button gets the reason instead of a 404.
+//
+// Cancellation BY US is unaffected: an admin still cancels through
+// PATCH /:id/status, and the unpaid-order sweeper still expires and restocks
+// orders that were never paid for.
 router.patch("/:id/cancel", verifyJWT, async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ error: "Order not found" });
-    }
-    if (order.userId !== req.user.userId) {
-      return res.status(403).json({ error: "Not authorized to cancel this order" });
-    }
-    if (order.orderStatus !== "processing") {
-      return res.status(400).json({ error: "Only processing orders can be cancelled" });
-    }
-
-    const diffInDays = (Date.now() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffInDays > 7) {
-      return res.status(400).json({ error: "No orders can be cancelled after 7 days of ordering" });
-    }
-
-    order.orderStatus = "cancelled";
-    flagRefundIfPaid(order, "The customer cancelled this paid order.");
-
-    // Put the pieces back on sale. Guarded by the flag rather than by status
-    // alone: cancellation and owner rejection are separate fields, so without
-    // it an order that was rejected and then cancelled would restock twice.
-    if (order.stockReserved) {
-      await releaseStock(order.items);
-      order.stockReserved = false;
-    }
-
-    await order.save();
-
-    res.json({ success: true, data: order });
-  } catch (error) {
-    console.error("Cancel order error:", error);
-    res.status(500).json({ error: "Failed to cancel order" });
-  }
+  res.status(410).json({
+    error:
+      "Orders cannot be cancelled once placed. If your piece arrived damaged or defective, contact us — see our Return & Exchange Policy.",
+  });
 });
 
 // DELETE /api/orders/delete-cart-items — clear user's cart
