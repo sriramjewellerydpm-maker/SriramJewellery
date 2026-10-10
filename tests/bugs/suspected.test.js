@@ -32,6 +32,26 @@ import { Product } from "../../server/models/Product.js";
 import { releaseStaleReservations } from "../../server/utils/stock.js";
 
 const ctx = useApp();
+
+/**
+ * Create an order the only way the shop still allows — through Razorpay — and
+ * attach the stored Order as `body.data`.
+ *
+ * POST /api/orders created cash-on-delivery orders and was withdrawn in
+ * f954e1e. These tests used it as the cheapest route to the checkout
+ * verification both routes perform; that verification now lives only here.
+ * Only the entity lookup is added: the response's own shape is left alone, so
+ * the genuine differences (200 not 201, paymentMethod "razorpay",
+ * orderStatus/paymentStatus "pending") are asserted rather than hidden.
+ */
+const checkout = async (token, body) => {
+  const res = await ctx.api(token).post("/api/payment/create-order").send(body);
+  if (res.status === 200 && res.body?.orderId) {
+    res.body.data = await Order.findById(res.body.orderId).lean();
+  }
+  return res;
+};
+
 const hourAgo = () => new Date(Date.now() - 60 * 60 * 1000);
 
 const envBackup = {};
@@ -176,93 +196,11 @@ describe("S1 · PATCH /api/users/:id passed req.body straight to findByIdAndUpda
 
 // ─── S2 ──────────────────────────────────────────────────────────────────────
 
-describe("S2 · POST /api/orders accepted any paymentMethod (fixed)", () => {
-  const place = async (paymentMethod) => {
-    await seedCatalog();
-    const c = await makeCustomer();
-    await ctx.api(c.token).post("/api/cart").send({ productId: "silver-anklet", name: "Anklet" });
-    const res = await ctx.api(c.token).post("/api/orders").send({
-      items: [{ productId: "gold-ring" }],
-      paymentMethod,
-      shippingAddress: SHIPPING,
-    });
-    return { c, res };
-  };
-
-  it.each(["razorpay", "upi", "free", "card", "cash", ""])(
-    "S2a: paymentMethod %j is refused — only COD may skip payment",
-    async (m) => {
-      const { res } = await place(m);
-      expect(res.status).toBe(400);
-    }
-  );
-
-  it("S2a: a refused 'upi' order (the Checkout page's UPI / QR SCAN option) writes nothing, alerts nobody, keeps the bag", async () => {
-    const { c, res } = await place("upi");
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Cash on Delivery/);
-    expect(await Order.countDocuments()).toBe(0);
-    expect(await stockOf("gold-ring")).toBe(5);
-    expect(mocks().whatsapp.sendOrderAlert).not.toHaveBeenCalled();
-    expect(await Cart.countDocuments({ userId: String(c.user._id) })).toBe(1);
-  });
-
-  it.each(["COD", " Cod ", "cod"])("S2b: %j is cash on delivery — stored as 'cod', never swept", async (m) => {
-    const { res } = await place(m);
-    expect(res.status).toBe(201);
-    const o = await Order.findById(res.body.data._id).lean();
-    expect(o.paymentMethod).toBe("cod");
-    await Order.updateOne({ _id: o._id }, { createdAt: hourAgo() });
-    const sweep = await releaseStaleReservations();
-    expect(sweep.released).toHaveLength(0);
-    expect(await stockOf("gold-ring")).toBe(4);
-  });
-
-  it("S2b: a legacy order stored as 'COD' before normalisation is never swept", async () => {
-    await seedCatalog();
-    // Raw insert: bypasses the model's lowercase setter, as old documents did.
-    await Order.collection.insertOne({
-      orderId: "ORD-LEGACY-COD",
-      items: [{ productId: "gold-ring", quantity: 1 }],
-      totalAmount: 80752,
-      paymentMethod: "COD",
-      paymentStatus: "pending",
-      orderStatus: "processing",
-      stockReserved: true,
-      paidAt: null,
-      createdAt: hourAgo(),
-    });
-    expect((await releaseStaleReservations()).released).toHaveLength(0);
-    expect(await stockOf("gold-ring")).toBe(5);
-  });
-
-  it("S2c: omitted paymentMethod → stored as COD with paymentStatus 'unpaid' (not 'pending')", async () => {
-    const { res } = await place(undefined);
-    const o = await Order.findById(res.body.data._id).lean();
-    expect(o.paymentMethod).toBe("cod");
-    expect(o.paymentStatus).toBe("unpaid");
-  });
-
-  // Not part of S2's fix: approval rules are Batch 2. The unpaid online order
-  // now comes from create-order, the only route that can still make one.
-  it("S2d: an unpaid online order cannot be approved and shipped", async () => {
-    await seedCatalog();
-    const c = await makeCustomer();
-    const created = await ctx.api(c.token).post("/api/payment/create-order").send({ items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
-    expect(created.status).toBe(200);
-    const admin = await makeAdmin();
-    const approve = await ctx.api(admin.token).patch(`/api/orders/${created.body.orderId}/approval`).send({ approvalStatus: "APPROVED" });
-    expect(approve.status).toBe(400);
-  });
-});
-
-// ─── S3 ──────────────────────────────────────────────────────────────────────
-
 describe("S3 · cancelling / rejecting a PAID online order (fixed)", () => {
   const paidOrder = async () => {
     await seedCatalog();
     const c = await makeCustomer();
-    const created = await ctx.api(c.token).post("/api/payment/create-order").send({ items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
+    const created = await checkout(c.token, { items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
     const rzp = created.body.razorpayOrderId;
     await ctx.api(c.token).post("/api/payment/verify").send({
       razorpay_order_id: rzp,
@@ -314,9 +252,9 @@ describe("S3 · cancelling / rejecting a PAID online order (fixed)", () => {
     await seedCatalog();
     const c = await makeCustomer();
     const admin = await makeAdmin();
-    const cod = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    const cod = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
     await ctx.api(c.token).patch(`/api/orders/${cod.body.data._id}/cancel`);
-    const unpaid = await ctx.api(c.token).post("/api/payment/create-order").send({ items: [{ productId: "silver-anklet" }], shippingAddress: SHIPPING });
+    const unpaid = await checkout(c.token, { items: [{ productId: "silver-anklet" }], shippingAddress: SHIPPING });
     await ctx.api(admin.token).patch(`/api/orders/${unpaid.body.orderId}/status`).send({ status: "cancelled" });
     expect(await Order.countDocuments({ refundRequired: true })).toBe(0);
     expect(mocks().whatsapp.sendRefundRequiredAlert).not.toHaveBeenCalled();
@@ -413,7 +351,7 @@ describe("S5 · reviews (fixed)", () => {
     const cat = await seedCatalog();
     const c = await buyer();
     const res = await ctx.api(c.token).post("/api/reviews").send({ productId: String(cat.gold._id), review: "Beautiful", rating: 5 });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ productId: "gold-ring", productName: "Gold Ring", mine: true });
   });
 
@@ -468,7 +406,7 @@ describe("S5 · reviews (fixed)", () => {
     const c = await buyer();
     const first = await ctx.api(c.token).post("/api/reviews").send({ productId: "gold-ring", review: "a", rating: 3 });
     await ctx.api(c.token).delete(`/api/reviews/${first.body.data._id}`);
-    expect((await ctx.api(c.token).post("/api/reviews").send({ productId: "gold-ring", review: "b", rating: 5 })).status).toBe(201);
+    expect((await ctx.api(c.token).post("/api/reviews").send({ productId: "gold-ring", review: "b", rating: 5 })).status).toBe(200);
   });
 });
 
@@ -486,8 +424,8 @@ describe("S6 · order numbers: SRJ-YYYYMMDD-NNNN from a daily counter (fixed)", 
     await seedCatalog();
     const c = await makeCustomer();
     await occupyNextMillis();
-    const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
-    expect(res.status).toBe(201);
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
+    expect(res.status).toBe(200);
     expect(res.body.data.orderId).toMatch(/^SRJ-\d{8}-\d{4}$/);
   });
 
@@ -496,7 +434,7 @@ describe("S6 · order numbers: SRJ-YYYYMMDD-NNNN from a daily counter (fixed)", 
     await createProduct("gold", { stock: 100 });
     const customers = await Promise.all(Array.from({ length: 30 }, () => makeCustomer()));
     const results = await Promise.all(
-      customers.map((c) => ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" }))
+      customers.map((c) => checkout(c.token, { items: [{ productId: "gold-ring" }] }))
     );
     expect(results.map((r) => r.status)).toEqual(Array(30).fill(201));
     const ids = results.map((r) => r.body.data.orderId).sort();
@@ -514,15 +452,15 @@ describe("S6 · order numbers: SRJ-YYYYMMDD-NNNN from a daily counter (fixed)", 
     const taken = await nextOrderId(); // …-0001
     await Order.collection.insertOne({ orderId: taken, totalAmount: 1, items: [] });
     await Counter.deleteMany({}); // the counter forgets it handed that out
-    const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
-    expect(res.status).toBe(201);
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
+    expect(res.status).toBe(200);
     expect(res.body.data.orderId).toBe(taken.replace(/-0001$/, "-0002"));
   });
 
   it("S6b: the card path gets the same format, and Razorpay's receipt carries it", async () => {
     await seedCatalog();
     const c = await makeCustomer();
-    const res = await ctx.api(c.token).post("/api/payment/create-order").send({ items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
     expect(res.status).toBe(200);
     const o = await Order.findById(res.body.orderId).lean();
     expect(o.orderId).toMatch(/^SRJ-\d{8}-\d{4}$/);
@@ -533,7 +471,7 @@ describe("S6 · order numbers: SRJ-YYYYMMDD-NNNN from a daily counter (fixed)", 
     await Order.collection.insertOne({ orderId: "ORD-1760023847193", totalAmount: 1, items: [] });
     await seedCatalog();
     const c = await makeCustomer();
-    await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    await checkout(c.token, { items: [{ productId: "gold-ring" }] });
     expect(await Order.countDocuments({ orderId: "ORD-1760023847193" })).toBe(1);
   });
 });
@@ -575,7 +513,7 @@ describe("S7 · admin changes to expired / cancelled / rejected orders (fixed �
     await seedCatalog();
     const a = await admin();
     const c = await makeCustomer();
-    const placed = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "one-of-a-kind" }], paymentMethod: "cod" });
+    const placed = await checkout(c.token, { items: [{ productId: "one-of-a-kind" }] });
     const id = placed.body.data._id;
     await ctx.api(a.token).patch(`/api/orders/${id}/approval`).send({ approvalStatus: "REJECTED", rejectionReason: "x" });
     const res = await ctx.api(a.token).patch(`/api/orders/${id}/approval`).send({ approvalStatus: "APPROVED" });
@@ -588,20 +526,20 @@ describe("S7 · admin changes to expired / cancelled / rejected orders (fixed �
     const c1 = await makeCustomer();
     const c2 = await makeCustomer();
     const c3 = await makeCustomer();
-    const first = await ctx.api(c1.token).post("/api/orders").send({ items: [{ productId: "one-of-a-kind" }], paymentMethod: "cod" });
+    const first = await checkout(c1.token, { items: [{ productId: "one-of-a-kind" }] });
     const id = first.body.data._id;
     await ctx.api(a.token).patch(`/api/orders/${id}/approval`).send({ approvalStatus: "REJECTED", rejectionReason: "x" });
     expect((await ctx.api(a.token).patch(`/api/orders/${id}/approval`).send({ approvalStatus: "APPROVED" })).status).toBe(400);
     expect((await Order.findById(id).lean()).approvalStatus).toBe("REJECTED");
-    expect((await ctx.api(c2.token).post("/api/orders").send({ items: [{ productId: "one-of-a-kind" }], paymentMethod: "cod" })).status).toBe(201);
-    expect((await ctx.api(c3.token).post("/api/orders").send({ items: [{ productId: "one-of-a-kind" }], paymentMethod: "cod" })).status).toBe(409);
+    expect((await checkout(c2.token, { items: [{ productId: "one-of-a-kind" }] })).status).toBe(200);
+    expect((await checkout(c3.token, { items: [{ productId: "one-of-a-kind" }] })).status).toBe(409);
   });
 
   it("S7f: admin setting status 'cancelled' returns the reserved stock", async () => {
     await seedCatalog();
     const a = await admin();
     const c = await makeCustomer();
-    const placed = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring", quantity: 2 }], paymentMethod: "cod" });
+    const placed = await checkout(c.token, { items: [{ productId: "gold-ring", quantity: 2 }] });
     await ctx.api(a.token).patch(`/api/orders/${placed.body.data._id}/status`).send({ status: "cancelled" });
     expect(await stockOf("gold-ring")).toBe(5);
   });
@@ -743,7 +681,7 @@ describe("S9 · fields the React pages send that the schemas dropped or mangled 
     await seedCatalog();
     await ctx.api().post("/api/contact").send({ name: "A", email: "a@b.co", phone: "98", subject: "s", message: "m" });
     const c = await makeCustomer();
-    const o = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod", shippingAddress: SHIPPING });
+    const o = await checkout(c.token, { items: [{ productId: "gold-ring" }], shippingAddress: SHIPPING });
     expect((await Order.findById(o.body.data._id).lean()).shippingAddress).toEqual(SHIPPING);
   });
 });

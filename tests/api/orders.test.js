@@ -11,6 +11,7 @@ import {
   daysAgo,
   PRODUCT_DEFS,
   SHIPPING,
+  razorpaySignature,
 } from "../helpers/factories.js";
 import { Order } from "../../server/models/Order.js";
 import { Cart } from "../../server/models/Cart.js";
@@ -18,21 +19,60 @@ import { Cart } from "../../server/models/Cart.js";
 const ctx = useApp();
 const DAY = 24 * 60 * 60 * 1000;
 
-const placeOrder = (token, items, extra = {}) =>
-  ctx.api(token).post("/api/orders").send({
-    items,
-    paymentMethod: "cod",
-    name: "Asha",
-    shippingAddress: SHIPPING,
-    ...extra,
-  });
-
 const createPayment = (token, items, extra = {}) =>
   ctx.api(token).post("/api/payment/create-order").send({ items, shippingAddress: SHIPPING, name: "Asha", ...extra });
 
+/**
+ * Place an order the only way the shop still allows — through Razorpay.
+ *
+ * POST /api/orders created cash-on-delivery orders and was withdrawn in
+ * f954e1e; these tests used it because it was the cheapest way to reach the
+ * checkout verification that BOTH routes perform. That verification now lives
+ * only in the payment route, so they point there.
+ *
+ * This normalises exactly ONE thing: it attaches the stored Order as
+ * `body.data`, because the old route returned it inline and these assertions
+ * are about what was written, not about the envelope. That is an entity
+ * lookup, not a reshaped response.
+ *
+ * Everything that genuinely differs is asserted in the tests instead of being
+ * smoothed over here — 200 rather than 201, paymentMethod "razorpay",
+ * orderStatus and paymentStatus "pending" rather than "processing"/"unpaid",
+ * and a razorpayOrderId that the COD route never had.
+ */
+/**
+ * Place an order AND confirm its payment.
+ *
+ * The owner alert and the cart clear used to happen when the cash-on-delivery
+ * order was created. They now happen when Razorpay confirms the payment
+ * (payment.js), which is the better moment — an unpaid order should not empty
+ * a bag or tell the owner to start packing. Tests about those two effects
+ * have to reach confirmation, not just creation.
+ */
+const placeAndPay = async (token, items, extra = {}) => {
+  const created = await placeOrder(token, items, extra);
+  if (created.status !== 200) return created;
+  const rzpId = created.body.razorpayOrderId;
+  await ctx.api(token).post("/api/payment/verify").send({
+    razorpay_order_id: rzpId,
+    razorpay_payment_id: "pay_ORDERS_TEST",
+    razorpay_signature: razorpaySignature(rzpId, "pay_ORDERS_TEST"),
+  });
+  created.body.data = await Order.findById(created.body.orderId).lean();
+  return created;
+};
+
+const placeOrder = async (token, items, extra = {}) => {
+  const res = await createPayment(token, items, extra);
+  if (res.status === 200 && res.body?.orderId) {
+    res.body.data = await Order.findById(res.body.orderId).lean();
+  }
+  return res;
+};
+
 // ─── Pricing integrity ───────────────────────────────────────────────────────
 
-describe("pricing integrity — POST /api/orders", () => {
+describe("pricing integrity — checkout (POST /api/payment/create-order)", () => {
   it("ignores client-sent price, unitPrice and totalAmount; charges computePrice × qty", async () => {
     await seedCatalog();
     const { token } = await makeCustomer();
@@ -41,7 +81,7 @@ describe("pricing integrity — POST /api/orders", () => {
       [{ productId: "gold-ring", quantity: 2, price: 1, unitPrice: 1, totalAmount: 1 }],
       { totalAmount: 1, gstAmount: 0 }
     );
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const o = res.body.data;
     expect(o.items[0].unitPrice).toBe(PRODUCT_DEFS.gold.expected);
     expect(o.totalAmount).toBe(PRODUCT_DEFS.gold.expected * 2);
@@ -62,7 +102,7 @@ describe("pricing integrity — POST /api/orders", () => {
       { productId: "silver-anklet", quantity: 3 },
       { productId: "gift-box", quantity: 1 },
     ]);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body.data.totalAmount).toBe(80752 + 3 * 5099 + 1500);
   });
 
@@ -118,7 +158,7 @@ describe("pricing integrity — POST /api/orders", () => {
   ])("validation: %j → 400", async (body, msg) => {
     await seedCatalog();
     const { token } = await makeCustomer();
-    const res = await ctx.api(token).post("/api/orders").send(body);
+    const res = await ctx.api(token).post("/api/payment/create-order").send(body);
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(msg);
   });
@@ -170,8 +210,8 @@ describe("stale rates refuse checkout — only for the stale metal", () => {
   it("stale gold: silver and weight-0 products still sell", async () => {
     await staleGold();
     const { token } = await makeCustomer();
-    expect((await placeOrder(token, [{ productId: "silver-anklet" }])).status).toBe(201);
-    expect((await placeOrder(token, [{ productId: "gift-box" }])).status).toBe(201);
+    expect((await placeOrder(token, [{ productId: "silver-anklet" }])).status).toBe(200);
+    expect((await placeOrder(token, [{ productId: "gift-box" }])).status).toBe(200);
     expect((await createPayment(token, [{ productId: "silver-anklet" }])).status).toBe(200);
   });
 
@@ -180,7 +220,7 @@ describe("stale rates refuse checkout — only for the stale metal", () => {
     const { token } = await makeCustomer();
     expect((await placeOrder(token, [{ productId: "silver-anklet" }])).status).toBe(503);
     expect((await createPayment(token, [{ productId: "silver-anklet" }])).status).toBe(503);
-    expect((await placeOrder(token, [{ productId: "gold-ring" }])).status).toBe(201);
+    expect((await placeOrder(token, [{ productId: "gold-ring" }])).status).toBe(200);
   });
 
   it("mixed basket with one stale metal is refused as a whole", async () => {
@@ -194,14 +234,14 @@ describe("stale rates refuse checkout — only for the stale metal", () => {
   it("a rate just under the limit is still accepted", async () => {
     await seedCatalog({ goldUpdatedAt: new Date(Date.now() - 3 * DAY + 60_000) });
     const { token } = await makeCustomer();
-    expect((await placeOrder(token, [{ productId: "gold-ring" }])).status).toBe(201);
+    expect((await placeOrder(token, [{ productId: "gold-ring" }])).status).toBe(200);
   });
 });
 
 // ─── Stock ───────────────────────────────────────────────────────────────────
 
 describe("stock reservation through the order routes", () => {
-  it("stock 0 → 409 (COD and card), nothing written", async () => {
+  it("stock 0 → 409 , nothing written", async () => {
     await seedRates();
     await createProduct("gold", { stock: 0 });
     const { token } = await makeCustomer();
@@ -222,12 +262,12 @@ describe("stock reservation through the order routes", () => {
     expect(res.body.error).toMatch(/only 5 left/);
   });
 
-  it("10 parallel COD orders for a stock-1 piece: exactly one wins, stock ends at 0", async () => {
+  it("10 parallel checkouts for a stock-1 piece: exactly one wins, stock ends at 0", async () => {
     await seedCatalog();
     const customers = await Promise.all(Array.from({ length: 10 }, () => makeCustomer()));
     const results = await Promise.all(customers.map((c) => placeOrder(c.token, [{ productId: "one-of-a-kind" }])));
     const statuses = results.map((r) => r.status).sort();
-    expect(statuses.filter((s) => s === 201)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 200)).toHaveLength(1);
     expect(statuses.filter((s) => s === 409)).toHaveLength(9);
     expect(await stockOf("one-of-a-kind")).toBe(0);
     expect(await Order.countDocuments()).toBe(1);
@@ -263,7 +303,9 @@ describe("stock reservation through the order routes", () => {
   });
 });
 
-describe("restock on cancel / reject happens exactly once", () => {
+describe("restock on owner rejection happens exactly once", () => {
+  // The customer-cancel halves of this block went with f954e1e: a paid order
+  // can no longer be cancelled by the customer, so only rejection restocks.
   const setup = async () => {
     await seedCatalog();
     const customer = await makeCustomer();
@@ -272,11 +314,6 @@ describe("restock on cancel / reject happens exactly once", () => {
     return { customer, admin, order: res.body.data };
   };
 
-  it("customer cancel restocks", async () => {
-    const { customer, order } = await setup();
-    expect((await ctx.api(customer.token).patch(`/api/orders/${order._id}/cancel`)).status).toBe(200);
-    expect(await stockOf("gold-ring")).toBe(5);
-  });
 
   it("owner reject restocks", async () => {
     const { admin, order } = await setup();
@@ -299,13 +336,6 @@ describe("restock on cancel / reject happens exactly once", () => {
     expect(await stockOf("gold-ring")).toBe(5);
   });
 
-  it("cancelling twice restocks once (second attempt 400)", async () => {
-    const { customer, order } = await setup();
-    await ctx.api(customer.token).patch(`/api/orders/${order._id}/cancel`);
-    const again = await ctx.api(customer.token).patch(`/api/orders/${order._id}/cancel`);
-    expect(again.status).toBe(400);
-    expect(await stockOf("gold-ring")).toBe(5);
-  });
 
   it("legacy order with stockReserved:false restocks nothing", async () => {
     await seedCatalog();
@@ -417,42 +447,30 @@ describe("approval rules", () => {
   });
 });
 
-describe("customer cancel", () => {
-  it("own processing order within 7 days → cancelled", async () => {
+describe("customer cancel was withdrawn (f954e1e)", () => {
+  // The nine tests that stood here asserted a self-serve cancel window. The
+  // published Cancellation Policy is now that a paid order cannot be
+  // cancelled, so the endpoint refuses. This pins the withdrawal: re-adding
+  // the endpoint turns this red, rather than quietly restoring behaviour the
+  // shop has told customers it does not offer.
+  it("PATCH /:id/cancel is gone — 410 for the owner of a cancellable order", async () => {
     const c = await makeCustomer();
-    const o = await insertOrder({ userId: String(c.user._id), createdAt: daysAgo(6.9) });
+    const o = await insertOrder({ userId: String(c.user._id), createdAt: daysAgo(1) });
     const res = await ctx.api(c.token).patch(`/api/orders/${o._id}/cancel`);
+    expect(res.status).toBe(410);
+    expect(res.body.error).toMatch(/cannot be cancelled/i);
+    expect((await Order.findById(o._id).lean()).orderStatus).toBe("processing");
+  });
+
+  it("cancellation BY US is unaffected — an admin can still cancel", async () => {
+    const { token: adminToken } = await makeAdmin();
+    const c = await makeCustomer();
+    const o = await insertOrder({ userId: String(c.user._id) });
+    const res = await ctx.api(adminToken).patch(`/api/orders/${o._id}/status`).send({ status: "cancelled" });
     expect(res.status).toBe(200);
-    expect(res.body.data.orderStatus).toBe("cancelled");
-  });
-
-  it("after 7 days → 400", async () => {
-    const c = await makeCustomer();
-    const o = await insertOrder({ userId: String(c.user._id), createdAt: daysAgo(7.01) });
-    const res = await ctx.api(c.token).patch(`/api/orders/${o._id}/cancel`);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/7 days/);
-  });
-
-  it.each(["shipped", "delivered", "cancelled", "expired", "pending"])("when %s → 400", async (orderStatus) => {
-    const c = await makeCustomer();
-    const o = await insertOrder({ userId: String(c.user._id), orderStatus });
-    expect((await ctx.api(c.token).patch(`/api/orders/${o._id}/cancel`)).status).toBe(400);
-  });
-
-  it("someone else's order → 403", async () => {
-    const owner = await makeCustomer();
-    const other = await makeCustomer();
-    const o = await insertOrder({ userId: String(owner.user._id) });
-    expect((await ctx.api(other.token).patch(`/api/orders/${o._id}/cancel`)).status).toBe(403);
-  });
-
-  it("unknown order → 404", async () => {
-    const c = await makeCustomer();
-    expect((await ctx.api(c.token).patch(`/api/orders/0123456789abcdef01234567/cancel`)).status).toBe(404);
+    expect((await Order.findById(o._id).lean()).orderStatus).toBe("cancelled");
   });
 });
-
 describe("cart clearing and Buy Now", () => {
   const addToCart = (token, productId) =>
     ctx.api(token).post("/api/cart").send({ productId, name: productId, quantity: 1 });
@@ -463,7 +481,7 @@ describe("cart clearing and Buy Now", () => {
     const other = await makeCustomer();
     await addToCart(c.token, "gold-ring");
     await addToCart(other.token, "gold-ring");
-    await placeOrder(c.token, [{ productId: "gold-ring" }]);
+    await placeAndPay(c.token, [{ productId: "gold-ring" }]);
     expect(await Cart.countDocuments({ userId: String(c.user._id) })).toBe(0);
     expect(await Cart.countDocuments({ userId: String(other.user._id) })).toBe(1);
   });
@@ -473,7 +491,7 @@ describe("cart clearing and Buy Now", () => {
     const c = await makeCustomer();
     await addToCart(c.token, "silver-anklet");
     const res = await placeOrder(c.token, [{ productId: "gold-ring" }], { buyNow: true });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(await Cart.countDocuments({ userId: String(c.user._id) })).toBe(1);
   });
 
@@ -499,7 +517,7 @@ describe("cart clearing and Buy Now", () => {
   });
 });
 
-describe("owner alerts on order creation", () => {
+describe("owner alerts on checkout", () => {
   it("the customer's profile phone is copied onto every order (COD and card)", async () => {
     await seedCatalog();
     const c = await makeCustomer();
@@ -512,7 +530,7 @@ describe("owner alerts on order creation", () => {
   it("with no mobile on the shipping address, the owner's alert still gets a number (the profile phone)", async () => {
     await seedCatalog();
     const c = await makeCustomer();
-    await placeOrder(c.token, [{ productId: "gold-ring" }], { shippingAddress: { ...SHIPPING, mobileNumber: undefined, number: undefined } });
+    await placeAndPay(c.token, [{ productId: "gold-ring" }], { shippingAddress: { ...SHIPPING, mobileNumber: undefined, number: undefined } });
     const { order } = mocks().whatsapp.sendOrderAlert.mock.calls[0][0];
     const wa = await vi.importActual("../../server/utils/whatsapp.js");
     process.env.WHATSAPP_TOKEN = "t";
@@ -532,19 +550,21 @@ describe("owner alerts on order creation", () => {
     }
   });
 
-  it("COD order alerts the owner once", async () => {
+  it("a confirmed order alerts the owner exactly once", async () => {
     await seedCatalog();
     const c = await makeCustomer();
-    await placeOrder(c.token, [{ productId: "gold-ring" }]);
+    await placeAndPay(c.token, [{ productId: "gold-ring" }]);
     expect(mocks().whatsapp.sendOrderAlert).toHaveBeenCalledTimes(1);
-    expect(mocks().whatsapp.sendOrderAlert.mock.calls[0][0].order.paymentMethod).toBe("cod");
+    // The alert describes a PAID order: it fires on confirmation, not on
+    // creation, so the owner is never told to pack something unpaid.
+    expect(mocks().whatsapp.sendOrderAlert.mock.calls[0][0].order.paymentMethod).toBe("razorpay");
   });
 
   it("an alert failure does not fail the order", async () => {
     await seedCatalog();
     mocks().whatsapp.sendOrderAlert.mockRejectedValueOnce(new Error("WhatsApp down"));
     const c = await makeCustomer();
-    expect((await placeOrder(c.token, [{ productId: "gold-ring" }])).status).toBe(201);
+    expect((await placeOrder(c.token, [{ productId: "gold-ring" }])).status).toBe(200);
   });
 
   it("card create-order does NOT alert (only a confirmed payment does)", async () => {

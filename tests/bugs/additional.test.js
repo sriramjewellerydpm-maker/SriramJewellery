@@ -27,6 +27,26 @@ import { Category } from "../../server/models/Category.js";
 
 const ctx = useApp();
 
+/**
+ * Create an order the only way the shop still allows — through Razorpay — and
+ * attach the stored Order as `body.data`.
+ *
+ * POST /api/orders created cash-on-delivery orders and was withdrawn in
+ * f954e1e. These tests used it as the cheapest route to the checkout
+ * verification both routes perform; that verification now lives only here.
+ * Only the entity lookup is added: the response's own shape is left alone, so
+ * the genuine differences (200 not 201, paymentMethod "razorpay",
+ * orderStatus/paymentStatus "pending") are asserted rather than hidden.
+ */
+const checkout = async (token, body) => {
+  const res = await ctx.api(token).post("/api/payment/create-order").send(body);
+  if (res.status === 200 && res.body?.orderId) {
+    res.body.data = await Order.findById(res.body.orderId).lean();
+  }
+  return res;
+};
+
+
 const envBackup = {};
 const setEnv = (k, v) => {
   if (!(k in envBackup)) envBackup[k] = process.env[k];
@@ -41,7 +61,7 @@ afterEach(() => {
   }
 });
 
-const createPayment = (token, body) => ctx.api(token).post("/api/payment/create-order").send({ shippingAddress: SHIPPING, ...body });
+const createPayment = (token, body) => checkout(token, { shippingAddress: SHIPPING, ...body });
 
 // ─── B1 ──────────────────────────────────────────────────────────────────────
 
@@ -102,7 +122,7 @@ describe("B1 · /api/payment/create-order did not validate items or quantity (fi
   it("B1: the COD route shares the same line rules (100 → 400)", async () => {
     await seedCatalog();
     const c = await makeCustomer();
-    const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring", quantity: 100 }], paymentMethod: "cod" });
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring", quantity: 100 }] });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/cannot exceed 99/);
   });
@@ -135,7 +155,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
     const shown = await page("gold-ring");
     // DynamicProduct.jsx: `const finalPrice = dynamicProduct.discountPrice || dynamicProduct.price`
     const displayed = shown.discountPrice || shown.price;
-    const order = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    const order = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
     expect(order.body.data.items[0].unitPrice).toBe(displayed);
     expect(displayed).toBe(72677);
   });
@@ -150,7 +170,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
     const c = await makeCustomer();
     const shown = await page("gold-ring");
     expect(rows(shown.priceBreakdown)).toBe(shown.price);
-    const cod = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring", quantity: 2 }], paymentMethod: "cod" });
+    const cod = await checkout(c.token, { items: [{ productId: "gold-ring", quantity: 2 }] });
     expect(cod.body.data.totalAmount).toBe(shown.price * 2);
     expect(cod.body.data.gstAmount).toBe(shown.priceBreakdown.gst * 2);
     const card = await createPayment(c.token, { items: [{ productId: "gold-ring" }] });
@@ -168,7 +188,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
   it("B2: discountPrice is calculated, never stored; a legacy stored value is ignored", async () => {
     const { token } = await makeAdmin();
     const res = await ctx.api(token).post("/api/products").send({ name: "Bangle", category: "Gold", weight: 10, discountPercentage: 10, discountPrice: 5 });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const { Product } = await import("../../server/models/Product.js");
     expect((await Product.findById(res.body.data._id).lean()).discountPrice).toBeUndefined();
     await seedRates();
@@ -191,7 +211,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
     const c = await makeCustomer();
     for (const price of [null, 0]) {
       await createProduct("weightless", { productId: `box-${price}`, price });
-      const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: `box-${price}` }], paymentMethod: "cod" });
+      const res = await checkout(c.token, { items: [{ productId: `box-${price}` }] });
       expect(res.status, String(price)).toBe(400);
       expect(res.body.error).toMatch(/no price set/);
     }
@@ -203,7 +223,7 @@ describe("B2 · the discount the product page showed was not what checkout charg
 describe("B3 · a metal with NO rate document fell back to the stored price (fixed)", () => {
   const STALE_SHAPE = (metal) =>
     `Our ${metal} rate is being updated, so these items cannot be priced right now. Please try again shortly.`;
-  const order = (token, items) => ctx.api(token).post("/api/orders").send({ items, paymentMethod: "cod" });
+  const order = (token, items) => checkout(token, { items });
 
   it("B3a: POST /api/orders refuses a product whose metal has no rate", async () => {
     await seedRates({ silver: null });
@@ -319,7 +339,7 @@ describe("B4 · products accepted negative weight / stock / price (fixed for new
 
   it("B4 (kept): zero weight, zero stock and zero price are valid", async () => {
     const res = await create({ weight: 0, stock: 0, price: 0 });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ weight: 0, stock: 0, price: 0 });
   });
 
@@ -329,8 +349,8 @@ describe("B4 · products accepted negative weight / stock / price (fixed for new
     await seedRates();
     await createProduct("gold", { weight: -5 });
     const c = await makeCustomer();
-    const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
-    expect(res.status).toBe(201);
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
+    expect(res.status).toBe(200);
     expect(res.body.data.totalAmount).toBeLessThan(0);
   });
 });
@@ -373,14 +393,14 @@ describe("B5 · inactive products were still listed and orderable (fixed)", () =
   it("B5b: an inactive product cannot be ordered", async () => {
     await inactiveRing();
     const c = await makeCustomer();
-    const res = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    const res = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
     expect(res.status).toBe(400);
   });
 
   it("B5b: a bag or Buy Now holding it is refused on both routes, naming the piece, and nothing is reserved", async () => {
     await inactiveRing();
     const c = await makeCustomer();
-    const cod = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod", buyNow: true });
+    const cod = await checkout(c.token, { items: [{ productId: "gold-ring" }], buyNow: true });
     const card = await createPayment(c.token, { items: [{ productId: "gold-ring" }] });
     for (const res of [cod, card]) {
       expect(res.status).toBe(400);
@@ -408,7 +428,7 @@ describe("B5 · inactive products were still listed and orderable (fixed)", () =
     const c = await makeCustomer();
     await ctx.api(admin.token).patch("/api/products/gold-ring").send({ isActive: true });
     expect((await ctx.api().get("/api/products/gold-ring")).status).toBe(200);
-    expect((await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" })).status).toBe(201);
+    expect((await checkout(c.token, { items: [{ productId: "gold-ring" }] })).status).toBe(200);
   });
 });
 
@@ -417,7 +437,7 @@ describe("B5 · inactive products were still listed and orderable (fixed)", () =
 describe("B6 · dashboard revenue figures disagreed with each other (fixed — utils/revenue.js)", () => {
   it("B6a: /revenue counts delivered COD orders", async () => {
     const admin = await makeAdmin();
-    await insertOrder({ paymentMethod: "cod", paymentStatus: "unpaid", orderStatus: "delivered", totalAmount: 50000 });
+    await insertOrder({ paymentStatus: "unpaid", orderStatus: "delivered", totalAmount: 50000 });
     const rev = (await ctx.api(admin.token).get("/api/admin-dashboard/revenue")).body.data;
     expect(rev.reduce((s, r) => s + r.totalRevenue, 0)).toBe(50000);
   });
@@ -444,11 +464,11 @@ describe("B6 · dashboard revenue figures disagreed with each other (fixed — u
     const admin = await makeAdmin();
     const counted = [
       { userId: "u1", paymentMethod: "razorpay", paidAt: new Date(), paymentStatus: "paid", totalAmount: 30000 }, // paid online
-      { userId: "u2", paymentMethod: "cod", orderStatus: "delivered", totalAmount: 20000 }, // delivered COD
+      { userId: "u2", orderStatus: "delivered", totalAmount: 20000 }, // delivered COD
       { userId: "u2", paymentMethod: "COD", orderStatus: "delivered", totalAmount: 5000 }, // legacy casing
     ];
     const notCounted = [
-      { userId: "u3", paymentMethod: "cod", orderStatus: "processing", totalAmount: 111 }, // COD not delivered
+      { userId: "u3", orderStatus: "processing", totalAmount: 111 }, // COD not delivered
       { userId: "u3", paymentMethod: "razorpay", paymentStatus: "pending", orderStatus: "pending", totalAmount: 222 }, // unpaid online
       { userId: "u3", paymentMethod: "razorpay", paidAt: new Date(), orderStatus: "cancelled", refundRequired: true, totalAmount: 333 },
       { userId: "u3", paymentMethod: "razorpay", paidAt: new Date(), orderStatus: "expired", totalAmount: 444 },
@@ -742,7 +762,7 @@ describe("B17 · z.coerce.boolean() read the string 'false' as true (fixed)", ()
     await seedCatalog();
     const c = await makeCustomer();
     await ctx.api(c.token).post("/api/cart").send({ productId: "silver-anklet", name: "A" });
-    await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod", buyNow: "false" });
+    await checkout(c.token, { items: [{ productId: "gold-ring" }], buyNow: "false" });
     expect(await Cart.countDocuments({ userId: String(c.user._id) })).toBe(0);
   });
 });
@@ -754,7 +774,7 @@ describe("B18 · approving a cancelled order (fixed — utils/orderStatus.js)", 
     await seedCatalog();
     const c = await makeCustomer();
     const admin = await makeAdmin();
-    const placed = await ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    const placed = await checkout(c.token, { items: [{ productId: "gold-ring" }] });
     await ctx.api(c.token).patch(`/api/orders/${placed.body.data._id}/cancel`);
     const res = await ctx.api(admin.token).patch(`/api/orders/${placed.body.data._id}/approval`).send({ approvalStatus: "APPROVED" });
     expect(res.status).toBe(400);

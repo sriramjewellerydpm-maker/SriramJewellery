@@ -73,10 +73,10 @@ describe("PATCH /api/rates", () => {
   it("refreshing a stale rate re-opens checkout for that metal", async () => {
     await seedCatalog({ goldUpdatedAt: daysAgo(5) });
     const c = await makeCustomer();
-    const order = () => ctx.api(c.token).post("/api/orders").send({ items: [{ productId: "gold-ring" }], paymentMethod: "cod" });
+    const order = () => ctx.api(c.token).post("/api/payment/create-order").send({ items: [{ productId: "gold-ring" }] });
     expect((await order()).status).toBe(503);
     await patch({ gold: 7000 });
-    expect((await order()).status).toBe(201);
+    expect((await order()).status).toBe(200);
   });
 });
 
