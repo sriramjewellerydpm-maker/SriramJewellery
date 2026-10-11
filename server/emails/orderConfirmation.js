@@ -76,12 +76,13 @@ export const orderConfirmationEmail = ({ order, siteUrl }) => {
     })
     .join("");
 
-  // Only what the order actually stores. There is no shipping charge in the
-  // system and the making charge is not copied onto the line, so neither is
-  // invented here; the subtotal is the stored total less the stored GST.
+  // Only what the order actually stores. The making charge is not copied onto
+  // the line, so it is not invented here; the subtotal is the stored total
+  // less the stored GST and the stored delivery.
   const gst = Number(order?.gstAmount) || 0;
   const grand = Number(order?.totalAmount) || 0;
-  const subtotal = grand - gst;
+  const delivery = Number(order?.deliveryAmount) || 0;
+  const subtotal = grand - gst - delivery;
 
   const totalRow = (label, value, strong) => `
                   <tr>
@@ -110,6 +111,7 @@ export const orderConfirmationEmail = ({ order, siteUrl }) => {
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:14px;">
                 ${totalRow("Subtotal", esc(money(subtotal)))}
                 ${gst > 0 ? totalRow("GST", esc(money(gst))) : ""}
+                ${totalRow("Delivery", delivery > 0 ? esc(money(delivery)) : "Free")}
                 ${totalRow("Total paid", esc(money(grand)), true)}
               </table>
 
@@ -171,6 +173,7 @@ export const orderConfirmationEmail = ({ order, siteUrl }) => {
       `${textLines.join("\n")}\n\n` +
       `  Subtotal: ${money(subtotal)}\n` +
       (gst > 0 ? `  GST: ${money(gst)}\n` : "") +
+      `  Delivery: ${delivery > 0 ? money(delivery) : "Free"}\n` +
       `  Total paid: ${money(grand)}\n\n` +
       "Your 15-day delivery window begins once the shop approves the order, not today.\n\n" +
       `View your orders: ${ordersUrl}\n\n` +

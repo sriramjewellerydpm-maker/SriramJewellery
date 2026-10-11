@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import useUserInfo from "../../hooks/useUserInfo";
 import ShippingAddressForm from "../../components/ShippingAddressForm/ShippingAddressForm";
 import Payment from "../Payment/Payment";
+import { deliveryChargeFor } from "../../../shared/delivery.js";
 import useCart from "../../hooks/useCart";
 import useAuthContext from "../../hooks/useAuthContext";
 import useAxiosSecure from "../../hooks/useAxiosSecure";
@@ -52,6 +53,24 @@ const Checkout = () => {
     : cartSubtotal?.gstAmount !== undefined
       ? Number(cartSubtotal.gstAmount)
       : null;
+
+  // Delivery, from the same shared rule the server charges by. Shown before
+  // the customer commits rather than appearing on the Razorpay screen — the
+  // server is still the one that decides it, and it prices from the
+  // catalogue, so this can only ever agree with what is charged.
+  const deliveryCharge = deliveryChargeFor(
+    buyNowItem
+      ? [{
+          deliveryCharge: buyNowItem.deliveryCharge,
+          unitPrice: buyNowItem.price,
+          quantity: buyNowItem.quantity || 1,
+        }]
+      : (cartData || []).map((i) => ({
+          deliveryCharge: i.deliveryCharge,
+          unitPrice: i.price,
+          quantity: i.quantity || 1,
+        }))
+  );
 
   // Once Razorpay reports success the server has ALREADY placed the order
   // (paid, stock reserved, owner alerted). From then on the payment method is
@@ -275,9 +294,9 @@ const Checkout = () => {
           <OrderSummary
             className="lg:sticky lg:top-32 rounded-none fade-in"
             items={checkoutItems}
-            total={Number(checkoutSubtotal) || 0}
+            total={(Number(checkoutSubtotal) || 0) + deliveryCharge}
             gstAmount={checkoutGst}
-            shipping="FREE"
+            shipping={deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString("en-IN")}` : "FREE"}
             rows={
               paymentInfo
                 ? [{

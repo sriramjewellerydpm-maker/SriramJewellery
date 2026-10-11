@@ -36,6 +36,11 @@ const ProductSchema = new mongoose.Schema({
   gstPercent: { type: Number, default: 0 },        // % — manual, per product
   metalType: { type: String, enum: ["gold", "silver"], default: "gold" },
   isQuoteOnly: { type: Boolean, default: false },  // true → "Get Quote" button, no price
+  // What this piece costs to deliver, in rupees. Set by the shop per product
+  // so the rates stay the owner's to change. 0 means free, which is what
+  // jewellery is. An order containing anything over ₹5,000 waives the lot —
+  // see shared/delivery.js.
+  deliveryCharge: { type: Number, default: 0, min: 0 },
   size: { type: String },
   carate: { type: Number },
 

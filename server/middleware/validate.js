@@ -126,6 +126,7 @@ export const createProductSchema = z.object({
   stock: z.coerce.number().int("Stock must be a whole number").min(0, "Stock cannot be negative").nullish(),
   carate: optionalNumber,
   isQuoteOnly: booleanish.nullish(),
+  deliveryCharge: z.coerce.number().min(0).max(100000).nullish(),
   // The gallery. `img` stays the primary and is what every older reader uses
   // (cards, order line snapshots, the owner's WhatsApp alert), so the form
   // keeps it in step with images[0] rather than replacing it.

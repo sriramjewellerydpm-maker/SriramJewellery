@@ -6,6 +6,7 @@ import { User } from "../models/User.js";
 import { Product } from "../models/Product.js";
 import { Cart } from "../models/Cart.js";
 import { computePrice } from "../utils/computePrice.js";
+import { deliveryChargeFor } from "../../shared/delivery.js";
 import { verifyJWT } from "../middleware/auth.js";
 import { sendOrderAlert, sendRefundRequiredAlert } from "../utils/whatsapp.js";
 import { sendMail } from "../utils/email.js";
@@ -133,6 +134,9 @@ router.post("/create-order", verifyJWT, validate(createPaymentOrderSchema), asyn
         productId: product.productId || product._id.toString(),
         name: product.name,
         image: product.img || product.image || (product.images && product.images[0]),
+        // Carried onto the line so delivery is worked out from the catalogue,
+        // never from anything the browser sent.
+        deliveryCharge: Number(product.deliveryCharge) || 0,
         quantity,
         unitPrice: serverPrice,
         weight: product.weight,
@@ -141,7 +145,11 @@ router.post("/create-order", verifyJWT, validate(createPaymentOrderSchema), asyn
       });
     }
 
-    totalAmount = Math.round(totalAmount);
+    // Delivery, from the shop's published rules and the catalogue's own
+    // weights — the same function the basket showed the customer.
+    const deliveryAmount = deliveryChargeFor(verifiedItems);
+
+    totalAmount = Math.round(totalAmount) + deliveryAmount;
     gstAmount = Math.round(gstAmount);
 
     // Take stock before sending the customer to Razorpay, so two people cannot
@@ -181,6 +189,7 @@ router.post("/create-order", verifyJWT, validate(createPaymentOrderSchema), asyn
         items: verifiedItems,
         totalAmount,
         gstAmount,
+        deliveryAmount,
         shippingAddress,
         razorpayOrderId: razorpayOrder.id,
         paymentMethod: "razorpay",
@@ -211,6 +220,7 @@ router.post("/create-order", verifyJWT, validate(createPaymentOrderSchema), asyn
       success: true,
       razorpayOrderId: razorpayOrder.id,
       amount: totalAmount,
+      deliveryAmount,
       currency: "INR",
       orderId: order._id,
       key: process.env.RAZORPAY_KEY_ID,

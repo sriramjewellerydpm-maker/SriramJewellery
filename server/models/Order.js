@@ -16,10 +16,17 @@ const OrderSchema = new mongoose.Schema({
     weight: { type: Number },
     metalType: { type: String, enum: ["gold", "silver"] },
     category: { type: String },
+    // Recorded on the line, not looked up later: repricing a product's
+    // delivery after the sale must not change what an old order was charged.
+    deliveryCharge: { type: Number, default: 0 },
   }],
 
   totalAmount: { type: Number, required: true },
   gstAmount: { type: Number, default: 0 },
+  // Delivery, computed on the server from shared/delivery.js and already
+  // included in totalAmount. Stored separately so the invoice, the receipt
+  // and the customer's order page can all show the same line.
+  deliveryAmount: { type: Number, default: 0 },
   orderStatus: { type: String, default: "processing" },
 
   // Owner approval (PRD: an order is not live until the owner confirms it).

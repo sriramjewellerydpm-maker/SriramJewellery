@@ -39,6 +39,11 @@ router.get("/", verifyJWT, async (req, res) => {
         // so without this the checkout summary cannot itemise the GST the
         // customer is being charged — it could only repeat the total twice.
         gstPercent: product?.gstPercent ?? 0,
+        // What this piece costs to deliver, so the basket can show postage
+        // before the customer commits. Taken from the catalogue, like the
+        // price — the server charges from the catalogue too, so the two
+        // cannot disagree.
+        deliveryCharge: Number(product?.deliveryCharge) || 0,
       };
     });
 

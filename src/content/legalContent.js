@@ -277,15 +277,11 @@ export const LEGAL_PAGES = {
       {
         heading: "Delivery charges",
         body: [
-          "Jewellery orders above ₹5,000 are delivered free.",
-          "Coins are charged by weight: ₹50 for a coin of 1 gram or less, and ₹100 for a coin above 1 gram.",
-          "If you order a coin together with a piece of jewellery costing more than ₹5,000, the whole order is delivered free — the coin included.",
+          "Jewellery is delivered free.",
+          "Coins carry a delivery charge, set by weight — typically ₹50 for a coin of 1 gram or less and ₹100 for a heavier one. The exact charge is shown against your order at checkout, before you pay.",
+          "Any order containing a piece costing more than ₹5,000 is delivered free, whatever else is in it. A coin ordered alongside such a piece travels free with it.",
+          "You will never be charged for delivery without seeing the amount first.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The delivery charge on a jewellery order of ₹5,000 or less.",
-          why: "The coin rates and the free-delivery threshold are settled. What is still missing is the charge below that threshold, and the site cannot take money for delivery at a rate it has not published.",
-        },
       },
       {
         heading: "Transit risk",

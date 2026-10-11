@@ -26,6 +26,9 @@ const InvoiceDocument = ({ order, seller = {} }) => {
 
   const gst = Number(order.gstAmount || 0);
   const total = Number(order.totalAmount || 0);
+  // Delivery is not a taxable supply line here — it is shown separately so
+  // the taxable value and the GST on it still reconcile.
+  const delivery = Number(order.deliveryAmount || 0);
   const taxable = total - gst;
   const halfGst = gst / 2;
 
@@ -125,6 +128,12 @@ const InvoiceDocument = ({ order, seller = {} }) => {
               <span>{money(halfGst)}</span>
             </div>
           </>
+        )}
+        {delivery > 0 && (
+          <div className="ip-row">
+            <span>Delivery</span>
+            <span>{money(delivery)}</span>
+          </div>
         )}
         <div className="ip-row ip-grand">
           <span>Total</span>

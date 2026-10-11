@@ -17,6 +17,7 @@ import { selectionBlockers } from "../../../utils/imageSelection";
 import useAdminMutation from "../../../hooks/useAdminMutation";
 import MutationStatus from "../../../components/MutationStatus/MutationStatus";
 import { certainFailure } from "../../../utils/mutationError";
+import { FREE_DELIVERY_OVER, SUGGESTED_COIN_DELIVERY } from "../../../../shared/delivery.js";
 import { getErrorMessage } from "../../../utils/errorMessage";
 
 const AdminAddProduct = () => {
@@ -107,6 +108,7 @@ const AdminAddProduct = () => {
       defaultValues.gstPercent = dynamicProduct.gstPercent || "";
       defaultValues.metalType = dynamicProduct.metalType || "gold";
       defaultValues.isQuoteOnly = dynamicProduct.isQuoteOnly || false;
+      defaultValues.deliveryCharge = dynamicProduct.deliveryCharge ?? "";
       defaultValues.category = dynamicProduct.category || "";
       defaultValues.selectedBadges = defaultBadges;
       defaultValues.stock = dynamicProduct.stock?.toString() || "";
@@ -216,6 +218,10 @@ const AdminAddProduct = () => {
       gstPercent: parseFloat(data.gstPercent) || 0,
       metalType: data.metalType || "gold",
       isQuoteOnly: data.isQuoteOnly || false,
+      deliveryCharge:
+        data.deliveryCharge === "" || data.deliveryCharge == null
+          ? 0
+          : Math.max(0, parseFloat(data.deliveryCharge) || 0),
       // A plain percentage of the whole piece, applied before GST by
       // computePrice. The discounted price is calculated, never stored.
       discountPercentage:
@@ -430,6 +436,35 @@ const AdminAddProduct = () => {
                     <span className="text-outline font-label-caps tracking-[0.1em] text-xs uppercase font-bold">Price on Request (Quote Only)</span>
                   </label>
                   <p className="text-xs text-on-surface-variant mt-1">If checked, weight and calculated price will be hidden from customers.</p>
+                </div>
+
+                {/* Set per product, so the shop changes its own postage
+                    without a deploy. Blank or 0 means free, which is what
+                    jewellery is. */}
+                <div className="w-full px-6 mt-6">
+                  <p className="text-outline font-label-caps tracking-[0.1em] text-xs uppercase">
+                    Delivery charge (₹)
+                  </p>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    {...register("deliveryCharge", {
+                      min: { value: 0, message: "Delivery cannot be negative" },
+                    })}
+                    className="w-full bg-transparent border-0 border-b border-outline-variant py-3 px-0 focus:ring-0 text-on-surface transition-ui duration-300 outline-none focus:border-primary"
+                  />
+                  {errors.deliveryCharge && (
+                    <p className="text-error text-xs mt-1">{errors.deliveryCharge.message}</p>
+                  )}
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    Leave blank for free delivery — that is normal for jewellery. Coins are
+                    usually ₹{SUGGESTED_COIN_DELIVERY.upto1g} up to 1g and
+                    ₹{SUGGESTED_COIN_DELIVERY.over1g} above. Any order containing a piece
+                    over ₹{FREE_DELIVERY_OVER.toLocaleString("en-IN")} is delivered free
+                    whatever is set here.
+                  </p>
                 </div>
 
                 {!isQuoteOnlyValue && (

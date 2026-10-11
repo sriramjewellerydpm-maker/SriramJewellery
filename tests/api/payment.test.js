@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { useApp, mocks } from "../helpers/app.js";
 import {
   seedCatalog,
+  createProduct,
   makeCustomer,
   stockOf,
   razorpaySignature,
@@ -63,6 +64,84 @@ describe("create-order without Razorpay keys", () => {
     } finally {
       process.env.RAZORPAY_KEY_ID = saved;
     }
+  });
+});
+
+// ── Delivery is charged on the server, from the catalogue ────────────────
+describe("delivery charges", () => {
+  // Silver: a 1g gold coin is already over ₹5,000 at the seeded rate, so the
+  // shop's waiver would send it free and nothing would be charged to assert.
+  const coin = (overrides) =>
+    createProduct("silver", {
+      productId: "coin-1g",
+      name: "1g Silver Coin",
+      // What the shop set in the admin form. Nothing here is derived from the
+      // category or the weight — the owner's number is the number.
+      deliveryCharge: 50,
+      weight: 1,
+      wastagePercent: 0,
+      gstPercent: 0,
+      price: 0,
+      stock: 5,
+      ...overrides,
+    });
+
+  it("charges what the shop set on the product", async () => {
+    await seedCatalog();
+    await coin();
+    const c = await makeCustomer();
+    const res = await createPayment(c.token, [{ productId: "coin-1g" }]);
+
+    expect(res.status).toBe(200);
+    expect(res.body.deliveryAmount).toBe(50);
+
+    const order = await Order.findById(res.body.orderId).lean();
+    expect(order.deliveryAmount).toBe(50);
+    // The charge is IN the total, not alongside it — the customer pays once.
+    expect(order.totalAmount).toBe(res.body.amount);
+    expect(order.items[0].deliveryCharge).toBe(50);
+  });
+
+  it("follows the owner when they change the rate", async () => {
+    await seedCatalog();
+    await coin({ productId: "coin-8g", name: "8g Silver Coin", deliveryCharge: 100, weight: 8 });
+    const c = await makeCustomer();
+    const res = await createPayment(c.token, [{ productId: "coin-8g" }]);
+    expect(res.body.deliveryAmount).toBe(100);
+  });
+
+  it("carries it free alongside a piece over ₹5,000", async () => {
+    await seedCatalog();
+    await coin();
+    const c = await makeCustomer();
+    // The gold ring is ₹80,752 — comfortably over the threshold.
+    const res = await createPayment(c.token, [
+      { productId: "gold-ring" },
+      { productId: "coin-1g" },
+    ]);
+    expect(res.body.deliveryAmount).toBe(0);
+  });
+
+  it("charges nothing on a product left at zero", async () => {
+    await seedCatalog();
+    const c = await makeCustomer();
+    const res = await createPayment(c.token, [{ productId: "gold-ring" }]);
+    expect(res.body.deliveryAmount).toBe(0);
+    expect((await Order.findById(res.body.orderId).lean()).deliveryAmount).toBe(0);
+  });
+
+  it("is decided by the catalogue, not by anything the browser sends", async () => {
+    await seedCatalog();
+    await coin();
+    const c = await makeCustomer();
+    // A browser claiming delivery is free, and claiming a price.
+    const res = await ctx.api(c.token).post("/api/payment/create-order").send({
+      items: [{ productId: "coin-1g", deliveryCharge: 0, unitPrice: 1 }],
+      shippingAddress: SHIPPING,
+      name: "Asha",
+    });
+    expect(res.body.deliveryAmount).toBe(50);
+    expect((await Order.findById(res.body.orderId).lean()).items[0].deliveryCharge).toBe(50);
   });
 });
 
