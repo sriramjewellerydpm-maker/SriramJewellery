@@ -7,6 +7,8 @@ import { Cart } from "../models/Cart.js";
 import { computePrice } from "../utils/computePrice.js";
 import { verifyJWT } from "../middleware/auth.js";
 import { sendOrderAlert, sendRefundRequiredAlert } from "../utils/whatsapp.js";
+import { sendMail } from "../utils/email.js";
+import { orderConfirmationEmail } from "../emails/orderConfirmation.js";
 import { getRateStatus, findUnpriceableMetalsForProducts, rateUnavailableMessage } from "../utils/getRates.js";
 import { reserveStock, releaseStock, outOfStockMessage } from "../utils/stock.js";
 import { validate, createPaymentOrderSchema } from "../middleware/validate.js";
@@ -293,6 +295,27 @@ const confirmPayment = async ({ razorpayOrderId, razorpayPaymentId, source }) =>
     sendOrderAlert({ order }).catch((err) =>
       console.error("Owner order alert failed (non-critical):", err.message)
     );
+    // The customer's receipt, on the same footing: fire-and-forget, never
+    // awaited and never able to throw into this path. The money has already
+    // moved and the order is written — failing or rolling that back because a
+    // mail provider was briefly unreachable would be far worse than a missing
+    // email, which the customer can still see under My Orders.
+    //
+    // Sent here rather than at order creation because an order is only
+    // confirmed once it is paid; the record created by /create-order is a
+    // pending reservation the sweeper may yet expire.
+    if (order.email) {
+      const mail = orderConfirmationEmail({ order });
+      sendMail({
+        to: order.email,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        tag: "order-confirmation",
+      }).catch((err) =>
+        console.error("Order confirmation email failed (non-critical):", err.message)
+      );
+    }
     return { order, alreadyConfirmed: false };
   }
 

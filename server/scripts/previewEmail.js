@@ -18,11 +18,30 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { signInCodeEmail } from "../emails/signInCode.js";
 import { passwordResetEmail } from "../emails/passwordReset.js";
+import { orderConfirmationEmail } from "../emails/orderConfirmation.js";
 
 dotenv.config();
 
 const OUT = path.join(fileURLToPath(new URL("../..", import.meta.url)), "tmp/email-preview");
 const GMAIL_CLIP_BYTES = 102 * 1024;
+
+const SITE = (process.env.PUBLIC_SITE_URL || "https://sriramjewellery.in").replace(/\/+$/, "");
+
+/** Shaped exactly as server/models/Order.js stores an order. */
+const order = (orderId, items, totalAmount, gstAmount) => ({
+  orderId,
+  items,
+  totalAmount,
+  gstAmount,
+  paymentMethod: "razorpay",
+  paymentStatus: "paid",
+  approvalStatus: "PENDING",
+  shippingAddress: {
+    firstName: "Asha", lastName: "Raman",
+    streetAddress: "14 Anna Salai", city: "Coimbatore", state: "Tamil Nadu",
+    postalCode: "641001", country: "India", number: "+91 9876543210",
+  },
+});
 
 const samples = [
   ["sign-in-code", signInCodeEmail({ code: "538788", expiryMinutes: 5 })],
@@ -31,6 +50,38 @@ const samples = [
     passwordResetEmail({
       resetUrl: `${(process.env.PUBLIC_SITE_URL || "https://sriramjewellery.in").replace(/\/+$/, "")}/reset-password?token=${"a".repeat(64)}`,
       expiryMinutes: 30,
+    }),
+  ],
+  [
+    "order-confirmation-multi",
+    orderConfirmationEmail({
+      siteUrl: SITE,
+      order: order("SRJ-20261011-0042", [
+        { name: "Heritage Gold Jhumkas", quantity: 1, unitPrice: 104545, weight: 12.5, metalType: "gold" },
+        { name: "Artisanal Textured Silver Bracelet", quantity: 2, unitPrice: 2368, weight: 22, metalType: "silver" },
+      ], 109281, 3183),
+    }),
+  ],
+  [
+    // Defensive: the payment route refuses quote-only items (payment.js:94),
+    // so this cannot arise from checkout today. Rendered anyway, because a
+    // line with no price must never show as Rs0 or NaN if one ever appears.
+    "order-confirmation-mixed",
+    orderConfirmationEmail({
+      siteUrl: SITE,
+      order: order("SRJ-20261011-0043", [
+        { name: "Vintage Gold Pendant", quantity: 1, unitPrice: 50002, weight: 6.2, metalType: "gold" },
+        { name: "Imperial Diamond Necklace", quantity: 1, unitPrice: null, metalType: "gold" },
+      ], 50002, 1456),
+    }),
+  ],
+  [
+    "order-confirmation-single",
+    orderConfirmationEmail({
+      siteUrl: SITE,
+      order: order("SRJ-20261011-0044", [
+        { name: "Royal Diamond Rings Set", quantity: 1, unitPrice: 78400 },
+      ], 78400, 2283),
     }),
   ],
 ];
