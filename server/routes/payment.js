@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import { Order } from "../models/Order.js";
+import { WebhookEvent } from "../models/WebhookEvent.js";
 import { User } from "../models/User.js";
 import { Product } from "../models/Product.js";
 import { Cart } from "../models/Cart.js";
@@ -484,13 +485,79 @@ router.post("/webhook", async (req, res) => {
     return res.status(400).json({ error: "Invalid webhook signature" });
   }
 
+  // Razorpay's own id for this event, stable across its retries. Without it
+  // there is nothing to deduplicate on, so an unidentified delivery is
+  // processed on its merits — confirmPayment is idempotent on its own.
+  const eventId = req.headers["x-razorpay-event-id"] || null;
+  const event = req.body?.event;
+  const payment = req.body?.payload?.payment?.entity;
+
+  // Claim this delivery. The unique index does the work: a second copy of the
+  // same event loses the insert and is acknowledged without being handled
+  // again. Checking for the row first and inserting after would be a race.
+  let claimed = false;
+  if (eventId) {
+    try {
+      await WebhookEvent.create({
+        eventId,
+        event: event || null,
+        razorpayOrderId: payment?.order_id || null,
+        razorpayPaymentId: payment?.id || null,
+      });
+      claimed = true;
+    } catch (claimError) {
+      if (claimError?.code === 11000) {
+        return res.json({ success: true, duplicate: true, event: event || null });
+      }
+      throw claimError;
+    }
+  }
+
+  // Release the claim when the work did not finish, so Razorpay's retry is not
+  // mistaken for a duplicate of a delivery that never completed.
+  const releaseClaim = async () => {
+    if (!claimed) return;
+    await WebhookEvent.deleteOne({ eventId }).catch((err) =>
+      console.error("Could not release webhook claim:", err.message)
+    );
+  };
+
+  const recordOutcome = (outcome) => {
+    if (!claimed) return;
+    WebhookEvent.updateOne({ eventId }, { outcome }).catch(() => {});
+  };
+
   try {
-    const event = req.body?.event;
-    const payment = req.body?.payload?.payment?.entity;
+    // ── payment.failed ────────────────────────────────────────────────────
+    //
+    // Recorded against the order, and nothing more. Stock is deliberately NOT
+    // released: Razorpay allows further attempts against the same order, and
+    // handing the pieces back here would let a customer's second, successful
+    // attempt arrive against stock we had already given away. The expiry
+    // sweeper reclaims an order that is genuinely abandoned.
+    if (event === "payment.failed" && payment?.order_id) {
+      const failed = await Order.findOneAndUpdate(
+        { razorpayOrderId: payment.order_id, paidAt: null },
+        {
+          paymentStatus: "failed",
+          lastPaymentError:
+            payment.error_description || payment.error_reason || "Payment failed",
+        },
+        { new: true }
+      );
+      if (failed) {
+        console.warn(
+          `Razorpay webhook: payment failed for ${failed.orderId} — ${failed.lastPaymentError}`
+        );
+      }
+      recordOutcome(failed ? "failed-recorded" : "failed-ignored");
+      return res.json({ success: true, event, matched: Boolean(failed) });
+    }
 
     // Acknowledge anything we don't act on with a 200 — a non-2xx tells Razorpay
     // to retry, and retrying an event we will never handle achieves nothing.
     if (event !== "payment.captured" || !payment?.order_id) {
+      recordOutcome("ignored");
       return res.json({ success: true, ignored: true, event: event || null });
     }
 
@@ -506,13 +573,40 @@ router.post("/webhook", async (req, res) => {
       console.error(
         `Razorpay webhook: payment.captured for unknown order ${payment.order_id} (payment ${payment.id}).`
       );
+      recordOutcome("unmatched");
       return res.json({ success: true, matched: false });
     }
 
+    // ── Cross-check the amount ────────────────────────────────────────────
+    //
+    // The figure in the payload is never used to price anything — the order was
+    // priced on the server when it was created, from the live metal rate. It is
+    // only compared. When the two disagree the money has already moved, so the
+    // order stands as paid, but it is flagged and logged loudly rather than one
+    // of the two numbers being quietly preferred.
+    const capturedPaise = Number(payment.amount);
+    const expectedPaise = Math.round(Number(order.totalAmount) * 100);
+    if (Number.isFinite(capturedPaise) && capturedPaise !== expectedPaise) {
+      console.error(
+        `⚠️  Razorpay webhook: AMOUNT MISMATCH on ${order.orderId} — ` +
+          `captured ${capturedPaise} paise, expected ${expectedPaise} paise ` +
+          `(payment ${payment.id}). Flagged for manual review.`
+      );
+      await Order.updateOne(
+        { _id: order._id },
+        { amountMismatch: true, capturedAmount: capturedPaise / 100 }
+      );
+      recordOutcome("amount-mismatch");
+      return res.json({ success: true, matched: true, alreadyConfirmed, amountMismatch: true });
+    }
+
+    recordOutcome(alreadyConfirmed ? "already-confirmed" : "confirmed");
     res.json({ success: true, matched: true, alreadyConfirmed });
   } catch (error) {
     // A 500 here asks Razorpay to retry, which is what we want for a transient
-    // database failure.
+    // database failure — so the claim has to go back, or the retry would be
+    // waved through as a duplicate.
+    await releaseClaim();
     console.error("Razorpay webhook error:", error);
     res.status(500).json({ error: "Webhook processing failed" });
   }

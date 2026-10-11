@@ -77,10 +77,56 @@ express.json()
 await connectDB()             per-request; skipped for /api/health.
   ↓                            Connecting at module load raced cold starts.
 authLimiter                   on /api/auth/login|register|refresh
-apiLimiter                    200 req/min on /api
-  ↓
+apiLimiter                    200 req/min on /api, EXCEPT the Razorpay
+  ↓                            webhook: a burst of retries is what happens
+                               when something is already wrong, and 429ing it
+                               makes Razorpay retry harder. The HMAC is that
+                               route's protection, not a request count.
 routers
 ```
+
+`runStartupChecks()` runs before any of it. In production, a deployment that
+has `RAZORPAY_KEY_ID` but no `RAZORPAY_WEBHOOK_SECRET` refuses to come up: it
+would take money while rejecting every confirmation Razorpay sent, so an order
+would stay pending forever whenever a customer closed the tab after paying.
+With no Razorpay keys at all there is nothing to verify and the check passes.
+
+### Razorpay webhook
+
+One route, `POST /api/payment/webhook`, registered in `routes/payment.js`.
+
+The signature is an HMAC over the **raw** request bytes, captured by the
+`verify` hook on `express.json()` — re-serialising the parsed body changes the
+bytes and the digest never matches. Compared with `crypto.timingSafeEqual`.
+
+Three separate things stop a retry being processed twice:
+
+1. `WebhookEvent` has a unique index on Razorpay's `x-razorpay-event-id`. The
+   insert IS the gate; a duplicate loses it and is acknowledged with 200. The
+   claim is deleted again if the handler then throws, so a genuine retry of a
+   delivery that never finished is not mistaken for a duplicate.
+2. `confirmPayment` updates on `{ razorpayOrderId, paidAt: null }`. Whoever
+   wins that conditional update sends the alerts; everyone else gets `null`.
+   This is what makes the browser's `/verify` and the webhook safe to race.
+3. Stock is taken at order creation, not at confirmation, so there is nothing
+   for a second confirmation to decrement.
+
+The amount in the payload is **only ever compared**, never used to price
+anything. On a disagreement the order stays paid — the money has moved — and
+is flagged `amountMismatch` with the captured figure recorded, because quietly
+preferring either number is how a piece ships for a hundredth of its price.
+
+`payment.failed` records the reason on the order and does not release stock:
+Razorpay permits another attempt against the same order, and returning the
+pieces here would leave a successful retry with nothing to ship. The expiry
+sweeper reclaims an order that is really abandoned. It is also guarded on
+`paidAt: null`, so a failure event delivered after a capture cannot un-pay an
+order.
+
+**The secret is per-mode.** The one created against test keys will not verify
+live events. After KYC, create a second webhook in live mode and replace
+`RAZORPAY_WEBHOOK_SECRET` — it is read from the environment at request time,
+so that is a dashboard and env change, never a code change.
 
 ### Serverless connection cache
 

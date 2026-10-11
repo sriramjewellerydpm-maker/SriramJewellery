@@ -26,9 +26,12 @@ const verify = (token, razorpay_order_id, razorpay_payment_id = "pay_TEST123", s
     razorpay_signature: sig ?? razorpaySignature(razorpay_order_id, razorpay_payment_id),
   });
 
-const webhook = (raw, sig = webhookSignature(raw)) => {
+const webhook = (raw, sig = webhookSignature(raw), eventId = null) => {
   const t = ctx.api().post("/api/payment/webhook").set("Content-Type", "application/json");
   if (sig !== null) t.set("X-Razorpay-Signature", sig);
+  // Razorpay's per-event id, stable across that event's retries. Left off by
+  // default so the existing tests keep exercising the un-deduplicated path.
+  if (eventId !== null) t.set("X-Razorpay-Event-Id", eventId);
   return t.send(raw);
 };
 
@@ -38,7 +41,12 @@ const pendingCardOrder = async () => {
   const customer = await makeCustomer();
   const res = await createPayment(customer.token, [{ productId: "gold-ring" }]);
   expect(res.status).toBe(200);
-  return { customer, rzpId: res.body.razorpayOrderId, orderId: res.body.orderId };
+  return {
+    customer,
+    rzpId: res.body.razorpayOrderId,
+    orderId: res.body.orderId,
+    amount: res.body.amount,
+  };
 };
 
 // Must run first: getRazorpay() caches the SDK instance once it has keys.
@@ -239,12 +247,133 @@ describe("POST /api/payment/webhook", () => {
     expect((await webhook(pretty, webhookSignature(pretty))).status).toBe(200);
   });
 
-  it("non payment.captured event → 200 ignored", async () => {
+  it("an event we do not act on → 200 ignored", async () => {
     const { rzpId, orderId } = await pendingCardOrder();
-    const res = await webhook(webhookPayload(rzpId, "pay_1", "payment.failed"));
+    const res = await webhook(webhookPayload(rzpId, "pay_1", "payment.authorized"));
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ignored: true, event: "payment.failed" });
+    expect(res.body).toMatchObject({ ignored: true, event: "payment.authorized" });
     expect((await Order.findById(orderId).lean()).paidAt).toBeNull();
+  });
+
+  // ── Idempotency ───────────────────────────────────────────────────────
+  //
+  // Razorpay retries, so the same event WILL arrive twice. Two guards stand
+  // behind that: the unique index on the event id, and — for a delivery with
+  // no event id at all — the fact that confirming a payment is a conditional
+  // update on `paidAt: null`. Both are exercised.
+
+  it("the same event id delivered twice confirms once", async () => {
+    const { rzpId, orderId } = await pendingCardOrder();
+    const raw = webhookPayload(rzpId, "pay_DUP");
+
+    const first = await webhook(raw, webhookSignature(raw), "evt_dup_1");
+    const second = await webhook(raw, webhookSignature(raw), "evt_dup_1");
+
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ matched: true, alreadyConfirmed: false });
+    // Acknowledged, not reprocessed — a non-2xx would only make Razorpay retry.
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({ duplicate: true });
+
+    const order = await Order.findById(orderId).lean();
+    expect(order.paymentStatus).toBe("paid");
+    expect(mocks().whatsapp.sendOrderAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("two different event ids for one payment still confirm once", async () => {
+    const { rzpId, orderId } = await pendingCardOrder();
+    const raw = webhookPayload(rzpId, "pay_TWICE");
+    await webhook(raw, webhookSignature(raw), "evt_a");
+    const again = await webhook(raw, webhookSignature(raw), "evt_b");
+
+    // The event id is new, so it is processed — and the conditional update is
+    // what stops it confirming a second time.
+    expect(again.body).toMatchObject({ matched: true, alreadyConfirmed: true });
+    expect((await Order.findById(orderId).lean()).paymentStatus).toBe("paid");
+    expect(mocks().whatsapp.sendOrderAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("a replay of an event we never finished is retried, not swallowed", async () => {
+    const { rzpId, orderId } = await pendingCardOrder();
+    const raw = webhookPayload(rzpId, "pay_RETRY");
+
+    // First delivery dies inside the handler, after the claim was taken.
+    const boom = vi.spyOn(Order, "findOneAndUpdate").mockRejectedValueOnce(new Error("db gone"));
+    const failed = await webhook(raw, webhookSignature(raw), "evt_retry");
+    expect(failed.status).toBe(500); // Razorpay will retry
+    boom.mockRestore();
+
+    // The retry must do the work, not be waved through as a duplicate.
+    const retried = await webhook(raw, webhookSignature(raw), "evt_retry");
+    expect(retried.body).toMatchObject({ matched: true, alreadyConfirmed: false });
+    expect((await Order.findById(orderId).lean()).paymentStatus).toBe("paid");
+  });
+
+  // ── The amount is cross-checked, never trusted ────────────────────────
+
+  it("the captured amount matching what we priced → no flag", async () => {
+    const { rzpId, orderId, amount } = await pendingCardOrder();
+    const raw = webhookPayload(rzpId, "pay_OK", "payment.captured", { amount: amount * 100 });
+    const res = await webhook(raw);
+    expect(res.body).toMatchObject({ matched: true });
+    expect(res.body.amountMismatch).toBeUndefined();
+    const order = await Order.findById(orderId).lean();
+    expect(order.amountMismatch).toBe(false);
+    expect(order.paymentStatus).toBe("paid");
+  });
+
+  it("a captured amount that disagrees is flagged, not quietly accepted", async () => {
+    const { rzpId, orderId, amount } = await pendingCardOrder();
+    // A hundred rupees against an eighty-thousand-rupee piece.
+    const raw = webhookPayload(rzpId, "pay_BAD", "payment.captured", { amount: 10000 });
+    const res = await webhook(raw);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ matched: true, amountMismatch: true });
+
+    const order = await Order.findById(orderId).lean();
+    // The money moved, so the order stands as paid — but a person must look.
+    expect(order.paymentStatus).toBe("paid");
+    expect(order.amountMismatch).toBe(true);
+    expect(order.capturedAmount).toBe(100);
+    // Our own figure is untouched: the payload never prices anything.
+    expect(order.totalAmount).toBe(amount);
+  });
+
+  // ── payment.failed ────────────────────────────────────────────────────
+
+  it("payment.failed records the reason and leaves the order unpaid", async () => {
+    const { rzpId, orderId } = await pendingCardOrder();
+    const raw = webhookPayload(rzpId, "pay_F1", "payment.failed", {
+      errorDescription: "Your card was declined by the issuing bank",
+    });
+    const res = await webhook(raw);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ event: "payment.failed", matched: true });
+
+    const order = await Order.findById(orderId).lean();
+    expect(order.paymentStatus).toBe("failed");
+    expect(order.lastPaymentError).toBe("Your card was declined by the issuing bank");
+    expect(order.paidAt).toBeNull();
+    // Stock stays held: Razorpay allows another attempt on the same order, and
+    // handing the pieces back here would lose the retry its stock.
+    expect(await stockOf("gold-ring")).toBe(4);
+    expect(mocks().whatsapp.sendOrderAlert).not.toHaveBeenCalled();
+  });
+
+  it("a failure delivered after the capture cannot un-pay the order", async () => {
+    const { rzpId, orderId } = await pendingCardOrder();
+    await webhook(webhookPayload(rzpId, "pay_OK2"));
+    expect((await Order.findById(orderId).lean()).paymentStatus).toBe("paid");
+
+    // Out-of-order delivery, which does happen.
+    await webhook(webhookPayload(rzpId, "pay_F2", "payment.failed", { errorDescription: "late" }));
+
+    const order = await Order.findById(orderId).lean();
+    expect(order.paymentStatus).toBe("paid");
+    expect(order.paidAt).not.toBeNull();
+    expect(order.lastPaymentError).toBeNull();
   });
 
   it("unknown order → 200 matched:false", async () => {

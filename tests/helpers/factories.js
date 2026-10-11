@@ -256,11 +256,32 @@ export const razorpaySignature = (orderId, paymentId) =>
     .update(`${orderId}|${paymentId}`)
     .digest("hex");
 
-export const webhookPayload = (orderId, paymentId = `pay_${Math.random().toString(36).slice(2, 10)}`, event = "payment.captured") =>
+/**
+ * `amount` is in PAISE and is left out unless given. Razorpay always sends it,
+ * but a fixture cannot know what the order was priced at, and a wrong figure
+ * would have every test tripping the amount cross-check. The tests that care
+ * pass it explicitly.
+ */
+export const webhookPayload = (
+  orderId,
+  paymentId = `pay_${Math.random().toString(36).slice(2, 10)}`,
+  event = "payment.captured",
+  { amount, errorDescription } = {}
+) =>
   JSON.stringify({
     entity: "event",
     event,
-    payload: { payment: { entity: { id: paymentId, order_id: orderId, status: "captured", amount: 100 } } },
+    payload: {
+      payment: {
+        entity: {
+          id: paymentId,
+          order_id: orderId,
+          status: event === "payment.failed" ? "failed" : "captured",
+          ...(amount === undefined ? {} : { amount }),
+          ...(errorDescription === undefined ? {} : { error_description: errorDescription }),
+        },
+      },
+    },
   });
 
 export const webhookSignature = (raw, secretValue = process.env.RAZORPAY_WEBHOOK_SECRET) =>

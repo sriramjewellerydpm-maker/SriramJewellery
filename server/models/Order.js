@@ -71,6 +71,16 @@ const OrderSchema = new mongoose.Schema({
   // webhook or the browser's verify call arrives first. This is what makes that
   // transition idempotent, so the owner is alerted exactly once per order.
   paidAt: { type: Date, default: null },
+  // Why the last payment attempt failed, from Razorpay's own webhook. Recorded
+  // only while the order is still unpaid, so a failed attempt that is retried
+  // successfully — or a failure event delivered out of order, after the
+  // capture — can never overwrite a paid order.
+  lastPaymentError: { type: String, default: null },
+  // Razorpay captured an amount that is not the one we priced. The money has
+  // moved, so the order stands, but a person has to look at it: silently
+  // trusting either figure is how a shop ships a ₹80,000 piece for ₹800.
+  amountMismatch: { type: Boolean, default: false },
+  capturedAmount: { type: Number, default: null },
 
   shippingAddress: { type: Object },
   // The customer's profile phone, copied when the order is placed. The owner's

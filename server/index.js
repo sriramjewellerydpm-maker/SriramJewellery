@@ -20,6 +20,11 @@ import newsletterRouter from "./routes/newsletter.js";
 import cronRouter from "./routes/cron.js";
 import connectDB from "./db/connect.js";
 import { apiLimiter, authLimiter, refreshLimiter } from "./middleware/rateLimit.js";
+import { runStartupChecks } from "./utils/startupChecks.js";
+
+// Before anything is wired up: a production deployment that cannot verify
+// Razorpay's webhooks must not come up pretending it can.
+runStartupChecks();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -103,7 +108,13 @@ app.use((req, res, next) => {
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/auth/refresh", refreshLimiter); // not authLimiter: see B10
-app.use("/api", apiLimiter);
+// Razorpay's webhooks skip the per-IP limiter. A burst of retries is exactly
+// what happens when something has gone wrong, and answering those with 429
+// would make Razorpay retry harder while the orders they carry stay pending.
+// The HMAC over the raw body is this route's protection, not a request count.
+app.use("/api", (req, res, next) =>
+  req.path === "/payment/webhook" ? next() : apiLimiter(req, res, next)
+);
 
 // ─── API Routes ──────────────────────────────────────────────────────────────
 // Auth — public endpoints (JWT issued here)
