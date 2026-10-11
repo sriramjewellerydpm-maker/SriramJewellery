@@ -40,7 +40,7 @@ const Payment = () => {
   const customerName = user?.name || userFromDB?.name || user?.displayName || "Customer";
   // Items come from the checkout context, never from the cart directly — the
   // cart is not what is being bought when the customer used "Buy Now".
-  const { orderTotal, checkoutItems, isBuyNow, setPaymentInfo } = useContext(PaymentContext);
+  const { orderTotal, deliveryCharge = 0, checkoutItems, isBuyNow, setPaymentInfo } = useContext(PaymentContext);
 
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [loadingPayment, setLoadingPayment] = useState(false);
@@ -108,10 +108,12 @@ const Payment = () => {
     // The amount the customer is about to authorise must equal the amount shown
     // on the button. If these disagree, the items and the total came from
     // different places and the order would be wrong.
-    const itemsTotal = checkoutItems.reduce(
-      (sum, item) => sum + (item.price || 0) * (item.quantity || 1),
-      0
-    );
+    // Delivery is part of the total on purpose, so it is part of the check
+    // too — without it every basket carrying a delivery charge would fail
+    // this guard and no coin could ever be bought.
+    const itemsTotal =
+      checkoutItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) +
+      (Number(deliveryCharge) || 0);
     if (Math.abs(itemsTotal - (orderTotal || 0)) > TOTAL_TOLERANCE) {
       setPaymentError("Your order total does not match the items in it. Please refresh and try again.");
       setLoadingPayment(false);

@@ -83,7 +83,12 @@ const Checkout = () => {
           // The items and the total must come from the same source: Payment
           // used to read the cart itself, so a "Buy Now" checkout billed the
           // cart while showing the Buy Now total.
-          orderTotal: checkoutSubtotal,
+          //
+          // Delivery is IN this figure, because it is in what the server
+          // charges. The button has to name the amount Razorpay will take,
+          // not the amount before postage.
+          orderTotal: (Number(checkoutSubtotal) || 0) + deliveryCharge,
+          deliveryCharge,
           checkoutItems: checkoutItems,
           isBuyNow: !!buyNowItem,
           setPaymentInfo: setPaymentInfo,
