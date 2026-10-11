@@ -29,7 +29,7 @@ const STEPS = [
   {
     icon: "favorite",
     title: "Your saves follow you",
-    body: "Your cart and wishlist live with your account, not this device. Sign in anywhere with the same number and they'll be waiting.",
+    body: "Your cart and wishlist live with your account, not this device. Sign in anywhere with the same email address and they'll be waiting.",
   },
 ];
 
@@ -45,7 +45,7 @@ const Onboarding = () => {
     <main className="w-full bg-surface text-on-surface min-h-screen">
       <CustomHelmet title="Welcome" />
 
-      <div className="max-w-[720px] mx-auto px-margin-mobile md:px-margin-desktop py-16 md:py-24">
+      <div className="max-w-[720px] mx-auto px-margin-mobile md:px-margin-desktop pt-32 pb-16 md:pb-24">
         <header className="mb-12 text-center">
           <p className="font-label-caps text-label-caps uppercase tracking-[0.2em] text-primary mb-4">
             Welcome to the heritage

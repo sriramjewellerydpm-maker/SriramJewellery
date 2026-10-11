@@ -1,6 +1,7 @@
 import React, { createContext, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import useUserInfo from "../../hooks/useUserInfo";
+import ShippingAddressForm from "../../components/ShippingAddressForm/ShippingAddressForm";
 import Payment from "../Payment/Payment";
 import useCart from "../../hooks/useCart";
 import useAuthContext from "../../hooks/useAuthContext";
@@ -18,6 +19,9 @@ const Checkout = () => {
   const [axiosSecure] = useAxiosSecure();
 
   const [paymentMethod, setPaymentMethod] = useState("card");
+  // Editing the address happens here, not on another page: sending someone to
+  // /dashboard/myAddress mid-checkout abandons the checkout they were in.
+  const [isEditingAddress, setIsEditingAddress] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState(null);
   const { cartData, cartSubtotal, refetch } = useCart();
   const navigate = useNavigate();
@@ -116,7 +120,13 @@ const Checkout = () => {
           
           <section className="mb-12">
             <h2 className="font-display-lg text-headline-sm mb-8 text-primary">Shipping Address</h2>
-            {userFromDB?.shippingAddress ? (
+            {isEditingAddress || !userFromDB?.shippingAddress ? (
+              <ShippingAddressForm
+                heading={userFromDB?.shippingAddress ? "Edit delivery address" : "Where should we deliver?"}
+                onCancel={userFromDB?.shippingAddress ? () => setIsEditingAddress(false) : undefined}
+                onSaved={() => setIsEditingAddress(false)}
+              />
+            ) : (
               <div className="p-6 border border-outline-variant/30 bg-white space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -152,25 +162,14 @@ const Checkout = () => {
                     {userFromDB?.shippingAddress.country}
                   </p>
                 </div>
-                <Link
-                  to="/dashboard/myAddress"
+                <button
+                  type="button"
+                  onClick={() => setIsEditingAddress(true)}
                   className="inline-flex items-center gap-2 text-primary hover:text-secondary transition-colors font-label-caps text-xs mt-4"
                 >
                   <span className="material-symbols-outlined text-[16px]">edit</span>
                   EDIT ADDRESS
-                </Link>
-              </div>
-            ) : (
-              <div className="border border-outline-variant/30 bg-surface-container-low p-8 text-center space-y-6">
-                <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">location_on</span>
-                <p className="text-on-surface-variant">You have not added a shipping or billing address yet.</p>
-                <Link
-                  to="/dashboard/myAddress"
-                  className="inline-flex items-center gap-2 bg-primary text-white font-button-text uppercase tracking-[0.2em] px-8 py-4 hover:opacity-90 transition-opacity"
-                >
-                  <span className="material-symbols-outlined text-[16px]">add</span>
-                  Add Address
-                </Link>
+                </button>
               </div>
             )}
           </section>
