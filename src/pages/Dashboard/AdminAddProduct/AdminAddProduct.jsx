@@ -4,7 +4,6 @@ import { useForm, Controller } from "react-hook-form";
 import PriceBreakdownPreview from "../../../components/PriceBreakdownPreview/PriceBreakdownPreview";
 import useRates from "../../../hooks/useRates";
 import { Link, useLocation, useParams } from "react-router-dom";
-import uploadIcon from "../../../assets/image-upload.png";
 import { getApiBaseUrl } from "../../../utils/apiConfig";
 import useAuthContext from "../../../hooks/useAuthContext";
 import Select from "react-select";
@@ -12,9 +11,9 @@ import Swal from "sweetalert2";
 import useProducts from "../../../hooks/useProducts";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import useCategories from "../../../hooks/useCategories";
-import { optimizeCloudinaryUrl } from "../../../utils/cloudinaryImage";
-import { uploadToCloudinary, MAX_IMAGE_BYTES } from "../../../utils/uploadToCloudinary";
-import { MAX_PRODUCT_IMAGES } from "../../../../shared/productImages.js";
+import { uploadToCloudinary } from "../../../utils/uploadToCloudinary";
+import ProductImagePicker from "../../../components/ProductImagePicker/ProductImagePicker";
+import { selectionBlockers } from "../../../utils/imageSelection";
 import { getErrorMessage } from "../../../utils/errorMessage";
 
 const AdminAddProduct = () => {
@@ -32,6 +31,11 @@ const AdminAddProduct = () => {
   const [dynamicProduct, setDynamicProduct] = useState(null);
   // Which file is going up, so a multi-image save is not a silent pause.
   const [uploadingImage, setUploadingImage] = useState(null);
+  // The chosen images, as an editable array. A FileList cannot be edited, so
+  // while the picker read input.files directly there was no way to drop one
+  // bad file out of a selection — only to re-pick the whole set.
+  const [imageEntries, setImageEntries] = useState([]);
+  const [imageError, setImageError] = useState(null);
   const [products] = useProducts();
 
   useEffect(() => {
@@ -52,9 +56,6 @@ const AdminAddProduct = () => {
   } = useForm();
 
   const isQuoteOnlyValue = watch("isQuoteOnly", false);
-  // The files currently chosen, so the form can show which ones and in what
-  // order before anything is uploaded.
-  const pickedImages = Array.from(watch("productImg") || []);
   // Watched so the price preview recalculates as the owner types.
   const weightValue = watch("weight");
   const wastageValue = watch("wastagePercent");
@@ -62,6 +63,10 @@ const AdminAddProduct = () => {
   const metalTypeValue = watch("metalType");
   const discountValue = watch("discountPercentage");
   const { rates } = useRates();
+
+  // Why Publish is unavailable, if it is. Shown beside the button rather than
+  // left for the owner to guess at.
+  const submitBlockers = selectionBlockers(imageEntries);
 
   // default tag options for badges list
   const [tagOptions] = useState([
@@ -144,24 +149,16 @@ const AdminAddProduct = () => {
       addedAt: new Date(),
     };
 
-    const imgFiles = Array.from(data.productImg || []);
-    const tooBig = imgFiles.find((f) => f.size > MAX_IMAGE_BYTES);
-    if (tooBig) {
-      Swal.fire({
-        title: "Image Size Exceeded!",
-        // Named, because with several files selected "an image is too big" is
-        // not something the shop owner can act on.
-        text: `"${tooBig.name}" is larger than 2MB. Please replace it and try again.`,
-        icon: "error",
-      });
+    // The picker disables the button for all of these, so arriving here with
+    // one outstanding means the submit came from somewhere else. Re-checked
+    // rather than trusted.
+    const blockers = selectionBlockers(imageEntries);
+    if (blockers.length) {
+      Swal.fire({ title: "Check the images", text: blockers.join(" "), icon: "error" });
       return;
     }
-    if (imgFiles.length > MAX_PRODUCT_IMAGES) {
-      Swal.fire({
-        title: "Too many images",
-        text: `A piece can carry up to ${MAX_PRODUCT_IMAGES} images. You selected ${imgFiles.length}.`,
-        icon: "error",
-      });
+    if (!dynamicProduct && imageEntries.length === 0) {
+      setImageError("At least one image is required.");
       return;
     }
 
@@ -176,15 +173,17 @@ const AdminAddProduct = () => {
     });
     if (!isConfirmed) return;
 
-    if (imgFiles.length) {
+    if (imageEntries.length) {
       try {
         // Sequentially, not Promise.all: each upload is a signed request of
         // its own, and when one fails this says WHICH one rather than failing
         // the batch anonymously.
         const uploaded = [];
-        for (const file of imgFiles) {
-          setUploadingImage(file.name);
-          uploaded.push(await uploadToCloudinary(file, axiosSecure));
+        // Over the entries, not the files: a downscaled file is renamed .jpg,
+        // and the progress line should name what the owner picked.
+        for (const entry of imageEntries) {
+          setUploadingImage(entry.name);
+          uploaded.push(await uploadToCloudinary(entry.file, axiosSecure));
         }
         product.images = uploaded;
         // img stays the primary everywhere else reads from.
@@ -508,92 +507,22 @@ const AdminAddProduct = () => {
                 <h4 className="font-display-md text-headline-sm text-primary border-b border-sand/30 pb-4 mb-8">
                   Upload Image
                 </h4>
-                <div>
-                  {dynamicProduct?.img ? (
-                    <figure>
-                      <div className="flex flex-wrap justify-center gap-2 mb-2">
-                        {(dynamicProduct.images?.length
-                          ? dynamicProduct.images
-                          : [dynamicProduct.img].filter(Boolean)
-                        ).map((src, i) => (
-                          <img
-                            key={src + i}
-                            src={optimizeCloudinaryUrl(src, { width: 200 })}
-                            alt=""
-                            className="w-24 h-24 object-cover bg-surface-container p-1 rounded-lg"
-                          />
-                        ))}
-                      </div>
-                      <figcaption className="text-center text-sm">
-                        {/* Said explicitly: choosing new files REPLACES the set
-                            rather than adding to it, which is not obvious from
-                            a file input and is not undoable. */}
-                        Current images — choosing new files replaces all of them
-                      </figcaption>
-                    </figure>
-                  ) : (
-                    <>
-                      <img
-                        src={uploadIcon}
-                        alt=""
-                        className="block mx-auto mb-1"
-                      />
-                      <p className="text-center text-xs font-light">
-                        Image size must not be more than 2Mb
-                      </p>
-                    </>
-                  )}
-
-                  <input
-                    type="file"
-                    multiple
-                    className="w-full max-w-xs mt-4 mx-auto block text-sm text-on-surface-variant file:mr-4 file:py-2.5 file:px-4 file:rounded-sm file:border-0 file:font-label-caps file:text-[11px] file:uppercase file:tracking-[0.1em] file:bg-surface-container file:text-on-surface hover:file:bg-primary hover:file:text-white file:cursor-pointer file:transition-colors"
-                    accept=".jpg, .jpeg, .png"
-                    name="productImg"
-                    {...register("productImg", {
-                      required: !dynamicProduct && true,
-                      validate: (files) =>
-                        (files?.length || 0) <= MAX_PRODUCT_IMAGES ||
-                        `Choose up to ${MAX_PRODUCT_IMAGES} images`,
-                    })}
-                  />
-
-                  <p className="text-center text-xs text-on-surface-variant mt-2">
-                    Choose up to {MAX_PRODUCT_IMAGES}. The first is the one shown on
-                    listings; the rest appear in the gallery on the product page.
-                  </p>
-
-                  {/* What is about to be uploaded, named — a count alone does
-                      not tell the shop owner they picked the wrong file. */}
-                  {pickedImages.length > 0 && (
-                    <ul className="mt-3 text-xs text-on-surface-variant max-w-xs mx-auto space-y-1">
-                      {pickedImages.map((f, i) => (
-                        <li key={f.name + i} className="flex justify-between gap-3">
-                          <span className="truncate">
-                            {i === 0 ? "1. " : `${i + 1}. `}
-                            {f.name}
-                            {i === 0 && <span className="text-primary"> (primary)</span>}
-                          </span>
-                          <span className={f.size > MAX_IMAGE_BYTES ? "text-error flex-none" : "flex-none"}>
-                            {(f.size / 1024 / 1024).toFixed(1)}MB
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {uploadingImage && (
-                    <p className="text-center text-xs text-primary mt-2" aria-live="polite">
-                      Uploading {uploadingImage}…
-                    </p>
-                  )}
-
-                  {errors.productImg && (
-                    <span className="text-error mt-1 text-center block">
-                      {errors.productImg.message || "Product image is required"}
-                    </span>
-                  )}
-                </div>
+                <ProductImagePicker
+                  entries={imageEntries}
+                  onChange={(next) => {
+                    setImageEntries(next);
+                    setImageError(null);
+                  }}
+                  existingImages={
+                    dynamicProduct?.img
+                      ? dynamicProduct.images?.length
+                        ? dynamicProduct.images
+                        : [dynamicProduct.img]
+                      : []
+                  }
+                  uploadingImage={uploadingImage}
+                  error={imageError}
+                />
               </div>
 
               <div className="bg-surface-container-low/50 border border-sand/30 p-6 md:p-8 hover:bg-white transition-ui rounded-xl mt-8">
@@ -736,21 +665,27 @@ const AdminAddProduct = () => {
               </div>
             </div>
 
-            {dynamicProduct ? (
+            {/* One button for both modes. It used to be two identical copies
+                differing only in label, which meant any change to it had to be
+                made twice. */}
+            <div className="md:absolute md:-top-20 md:right-0 w-full md:w-auto flex flex-col md:items-end gap-2">
               <button
                 type="submit"
-                className="md:absolute md:-top-20 md:right-0 bg-primary text-white py-4 md:py-5 px-8 font-button-text uppercase tracking-[0.2em] text-[12px] hover:bg-primary-container transition-ui duration-500 transform hover:scale-[1.01] active:scale-[0.98] w-full md:w-auto"
+                disabled={submitBlockers.length > 0}
+                className="bg-primary text-white py-4 md:py-5 px-8 font-button-text uppercase tracking-[0.2em] text-[12px] hover:bg-primary-container transition-ui duration-500 transform hover:scale-[1.01] active:scale-[0.98] w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                Publish Edit
+                {dynamicProduct ? "Publish Edit" : "Publish"}
               </button>
-            ) : (
-              <button
-                type="submit"
-                className="absolute -top-20 right-0 bg-primary text-white py-4 md:py-5 px-8 font-button-text uppercase tracking-[0.2em] text-[12px] hover:bg-primary-container transition-ui duration-500 transform hover:scale-[1.01] active:scale-[0.98] w-full md:w-auto"
-              >
-                Publish
-              </button>
-            )}
+              {/* A dead button with no explanation is the thing this replaces. */}
+              {submitBlockers.length > 0 && (
+                <p
+                  className="text-xs text-error md:text-right max-w-xs"
+                  aria-live="polite"
+                >
+                  {submitBlockers[0]}
+                </p>
+              )}
+            </div>
           </form>
         </div>
       </div>
