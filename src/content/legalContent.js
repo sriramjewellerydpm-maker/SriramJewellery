@@ -132,24 +132,37 @@ export const LEGAL_PAGES = {
         },
       },
       {
+        // Written out because these are the statute's words, not the shop's
+        // choices: the Digital Personal Data Protection Act 2023, which is
+        // what applies to customers in India. We deliver only within India
+        // (India Post, see the Shipping Policy), so no GDPR wording is added
+        // here — if the shop ever ships to or markets in the EU or UK, this
+        // section needs a lawyer before that begins.
         heading: "Your rights",
-        needsInput: {
-          from: "legal",
-          what: "The rights wording appropriate to the customers you actually serve — India's DPDP Act 2023 for domestic customers, and GDPR wording additionally if you ship to or market in the EU/UK.",
-          why: "The two regimes grant overlapping but differently-worded rights. Which applies depends on where you sell, which is a business decision.",
-        },
+        body: [
+          "Under India's Digital Personal Data Protection Act 2023 you may ask us to do the following, and we will not charge you for it:",
+        ],
+        list: [
+          "Tell you what personal data of yours we hold and what we have done with it.",
+          "Correct anything that is wrong, complete anything that is missing, or update anything that has changed.",
+          "Erase what we hold, except where we are required by law to keep it — invoices in particular, which tax and GST rules oblige us to retain.",
+          "Withdraw a consent you previously gave. That does not undo anything done while the consent was in force.",
+          "Nominate someone to exercise these rights for you if you die or become incapable of exercising them yourself.",
+          "Raise a grievance with us, and take it to the Data Protection Board of India if our answer does not satisfy you.",
+        ],
       },
       {
         heading: "Contacting us about your data",
+        // The two windows below are what the Consumer Protection (E-Commerce)
+        // Rules 2020 already require of the shop, so publishing them adds no
+        // obligation that does not already exist — and those same rules
+        // require them to be published.
         body: [
           "Write to our data protection address and we will respond to access, correction and deletion requests.",
+          "Radhakrishnan, the proprietor, is our Grievance Officer. We will acknowledge a grievance within 48 hours of receiving it and resolve it within one month.",
+          "If our answer does not satisfy you, you may take the matter to the Data Protection Board of India.",
         ],
         contact: "privacy",
-        needsInput: {
-          from: "client",
-          what: "The response window the shop commits to for a grievance — Indian e-commerce rules expect acknowledgement within 48 hours and resolution within one month.",
-          why: "The officer and the address are now published above. The committed response time is the remaining piece, and it is a promise the shop has to be able to keep.",
-        },
       },
     ],
   },
@@ -262,15 +275,16 @@ export const LEGAL_PAGES = {
         ],
       },
       {
-        heading: "Shipping charges",
+        heading: "Delivery charges",
         body: [
           "Jewellery orders above ₹5,000 are delivered free.",
-          "Coins are charged for delivery whatever the order comes to. Free delivery above ₹5,000 applies to jewellery only.",
+          "Coins are charged by weight: ₹50 for a coin of 1 gram or less, and ₹100 for a coin above 1 gram.",
+          "If you order a coin together with a piece of jewellery costing more than ₹5,000, the whole order is delivered free — the coin included.",
         ],
         needsInput: {
           from: "client",
-          what: "The delivery charge on a jewellery order of ₹5,000 or less, the charge on coins, and how an order containing both jewellery and coins is charged.",
-          why: "The threshold is confirmed but no figure has been given for anything below it, and the site cannot take money for delivery at a rate it has not published. Checkout cannot charge for shipping until these three numbers exist.",
+          what: "The delivery charge on a jewellery order of ₹5,000 or less.",
+          why: "The coin rates and the free-delivery threshold are settled. What is still missing is the charge below that threshold, and the site cannot take money for delivery at a rate it has not published.",
         },
       },
       {
@@ -329,11 +343,13 @@ export const LEGAL_PAGES = {
           "An accepted damaged or defective piece is replaced. We do not refund the purchase price for a fault, so no question arises of re-pricing the piece against the metal rate on the day it comes back.",
           "You are not charged again for the replacement, and you pay neither the return nor the re-delivery cost.",
         ],
-        needsInput: {
-          from: "client",
-          what: "What happens when the piece cannot be replaced — a one-off design, or that piece no longer in stock.",
-          why: "Replacement-only has no answer for the case that will certainly occur sooner or later. As the policy stands, a customer holding a faulty piece we cannot replace is left with no stated remedy at all, and that is the gap a consumer forum would look at first.",
-        },
+      },
+      {
+        heading: "If the piece cannot be replaced",
+        body: [
+          "Replacement is our normal remedy, and in most cases it is the one we will offer. Occasionally it is not possible — a one-off design, or a piece we can no longer obtain.",
+          "In that situation we will agree the outcome with you case by case. Depending on the circumstances that may be a comparable piece, or, where nothing suitable can be offered, a refund. We will tell you what we can do when you report the fault, and we will not leave you without a remedy.",
+        ],
       },
       {
         heading: "When a refund does happen",
