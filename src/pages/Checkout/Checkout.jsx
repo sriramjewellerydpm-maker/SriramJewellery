@@ -19,7 +19,6 @@ const Checkout = () => {
   const [userFromDB] = useUserInfo();
   const [axiosSecure] = useAxiosSecure();
 
-  const [paymentMethod, setPaymentMethod] = useState("card");
   // Editing the address happens here, not on another page: sending someone to
   // /dashboard/myAddress mid-checkout abandons the checkout they were in.
   const [isEditingAddress, setIsEditingAddress] = useState(false);
@@ -77,10 +76,6 @@ const Checkout = () => {
   // locked and Complete Order only finishes that order — switching to Cash on
   // Delivery used to post a second order for the same items (bug B20).
   const isPaid = paymentInfo?.status === "success";
-  const choosePaymentMethod = (method) => {
-    if (!isPaid) setPaymentMethod(method);
-  };
-
   const onlinePaymentBox = (
     <div className="mt-6 pt-6 border-t border-outline-variant/30 px-2" onClick={(e) => e.stopPropagation()}>
       <PaymentContext.Provider
@@ -197,56 +192,24 @@ const Checkout = () => {
             <h2 className="font-display-lg text-headline-sm mb-8 text-primary">Payment Method</h2>
             {isPaid && (
               <p role="status" className="mb-6 p-4 border border-primary/30 bg-surface-container text-on-surface text-sm">
-                Payment received — your order is placed. Select Complete Order to finish; the payment
-                method can no longer be changed.
+                Payment received — your order is placed. Select Complete Order to finish.
               </p>
             )}
-            <div className="space-y-4">
-              <label 
-                className={`flex flex-col p-5 bg-white border cursor-pointer hover:border-primary transition-ui group ${paymentMethod === 'card' ? 'border-primary' : 'border-outline-variant'}`}
-                onClick={() => choosePaymentMethod('card')}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-4">
-                    <input 
-                      checked={paymentMethod === 'card'} 
-                      readOnly
-                      className="text-primary focus:ring-primary w-5 h-5 border-outline-variant" 
-                      type="radio" 
-                      name="payment" 
-                    />
-                    <span className="font-label-caps text-on-surface">CREDIT CARD</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="material-symbols-outlined text-on-surface-variant">credit_card</span>
-                  </div>
-                </div>
-                {paymentMethod === 'card' && onlinePaymentBox}
-              </label>
-
-              <label 
-                className={`flex flex-col p-5 bg-white border cursor-pointer hover:border-primary transition-ui group ${paymentMethod === 'upi' ? 'border-primary' : 'border-outline-variant'}`}
-                onClick={() => choosePaymentMethod('upi')}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-4">
-                    <input 
-                      checked={paymentMethod === 'upi'}
-                      readOnly
-                      className="text-primary focus:ring-primary w-5 h-5 border-outline-variant" 
-                      type="radio" 
-                      name="payment" 
-                    />
-                    <span className="font-label-caps text-on-surface">UPI / QR SCAN</span>
-                  </div>
-                  <span className="material-symbols-outlined text-on-surface-variant">qr_code_2</span>
-                </div>
-                {/* Razorpay's checkout offers UPI and QR itself, so the UPI tile
-                    uses the very same payment box as the card tile — one
-                    payment path, never a second one. */}
-                {paymentMethod === 'upi' && onlinePaymentBox}
-              </label>
-
+            {/* One method, because there has only ever been one.
+                "Credit card" and "UPI / QR" were two radio tiles that opened
+                the identical Razorpay checkout — the old code said so in a
+                comment. Razorpay's own screen is where UPI, cards,
+                netbanking and wallets are chosen, so asking twice only made
+                the customer pick something that did not matter, and gave
+                them a way to get it wrong. */}
+            <div className="p-5 bg-white border border-primary">
+              <div className="flex items-center justify-between w-full">
+                <span className="font-label-caps text-on-surface">PAY ONLINE</span>
+                <span className="material-symbols-outlined text-on-surface-variant" aria-hidden="true">
+                  lock
+                </span>
+              </div>
+              {onlinePaymentBox}
             </div>
 
             {/* Said plainly here, not only in the policy: a customer who

@@ -169,9 +169,12 @@ const Billing = () => {
             })}
           </div>
 
-          {/* TODO(client): a downloadable GST tax invoice needs the seller
-              GSTIN and per-item HSN codes, which are not yet set on products.
-              Until then this page is a payment record, not a tax invoice. */}
+          {/* The seller GSTIN is set (shared/seller.js), so the invoice on
+              the order confirmation is labelled TAX INVOICE and carries it.
+              TODO(client): per-item HSN codes are still not set on products.
+              B2C supplies below the turnover threshold do not require them,
+              which the shop's auditor should confirm before this page offers
+              a download rather than pointing at a person. */}
           <p className="font-body-base text-[13px] text-on-surface-variant mt-6">
             Need a GST invoice? Contact us with your order reference and we'll
             send one.

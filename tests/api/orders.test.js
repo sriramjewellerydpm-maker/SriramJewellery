@@ -579,12 +579,44 @@ describe("reading orders", () => {
   it("GET /api/orders returns only the caller's orders, newest first", async () => {
     const a = await makeCustomer();
     const b = await makeCustomer();
-    await insertOrder({ userId: String(a.user._id), createdAt: daysAgo(2) });
-    const newest = await insertOrder({ userId: String(a.user._id), createdAt: daysAgo(1) });
-    await insertOrder({ userId: String(b.user._id) });
+    const paid = { paidAt: new Date(), paymentStatus: "paid" };
+    await insertOrder({ userId: String(a.user._id), createdAt: daysAgo(2), ...paid });
+    const newest = await insertOrder({ userId: String(a.user._id), createdAt: daysAgo(1), ...paid });
+    await insertOrder({ userId: String(b.user._id), ...paid });
     const res = await ctx.api(a.token).get("/api/orders");
     expect(res.body).toHaveLength(2);
     expect(res.body[0]._id).toBe(String(newest._id));
+  });
+
+  it("an abandoned payment is not shown to the customer as an order", async () => {
+    // The row is written before the customer reaches Razorpay, because that
+    // is what holds the stock while they pay. Opening the payment screen and
+    // backing out used to leave "Placed on …" against something never
+    // bought — and trying twice showed two of them.
+    const c = await makeCustomer();
+    await insertOrder({ userId: String(c.user._id), paidAt: null, paymentStatus: "pending" });
+    const confirmed = await insertOrder({
+      userId: String(c.user._id),
+      paidAt: new Date(),
+      paymentStatus: "paid",
+    });
+
+    const res = await ctx.api(c.token).get("/api/orders");
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]._id).toBe(String(confirmed._id));
+  });
+
+  it("an order paid but not yet approved IS shown — it is a real order", async () => {
+    const c = await makeCustomer();
+    await insertOrder({
+      userId: String(c.user._id),
+      paidAt: new Date(),
+      paymentStatus: "paid",
+      approvalStatus: "PENDING",
+    });
+    const res = await ctx.api(c.token).get("/api/orders");
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].approvalStatus).toBe("PENDING");
   });
 
   it("GET /api/orders/:id — owner 200, other customer 403, admin 200, unknown 404", async () => {

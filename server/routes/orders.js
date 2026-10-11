@@ -43,9 +43,20 @@ export const DELIVERY_WINDOW_DAYS = 15;
 // ─── User Orders ─────────────────────────────────────────────────────────────
 
 // GET /api/orders — user's own orders
+// GET /api/orders — the customer's own orders
+//
+// Paid ones only. An order row is written BEFORE the customer reaches
+// Razorpay, because that is what holds the stock while they pay — so opening
+// the payment screen and backing out used to leave a row that said "Placed
+// on …" for something never bought. A customer who tried twice saw two of
+// them, and had no way to tell them from a real order.
+//
+// Those rows still exist; they are a reservation, not an order, and the
+// sweeper releases them. They simply are not the customer's business until
+// money has moved. `paidAt` is the moment it did.
 router.get("/", verifyJWT, async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.userId })
+    const orders = await Order.find({ userId: req.user.userId, paidAt: { $ne: null } })
       .sort({ createdAt: -1 })
       .lean();
     res.json(orders);

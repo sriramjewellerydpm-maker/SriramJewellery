@@ -36,7 +36,10 @@
  * legal placeholder sections use. Fill one in and it becomes a live link
  * everywhere at once, with no other change.
  *
- * TODO(client): confirm each mailbox exists and is monitored, then set it here.
+ * All four now point at the shop's one real, monitored mailbox, confirmed by
+ * the client on 11 October 2026. They stay separate keys rather than being
+ * collapsed into one so that a dedicated privacy or security address can be
+ * added later by changing a single line.
  */
 export const CONTACT = {
   support: {

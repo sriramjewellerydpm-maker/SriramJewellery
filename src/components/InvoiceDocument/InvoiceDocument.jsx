@@ -1,4 +1,5 @@
 import React from "react";
+import { SELLER } from "../../../shared/seller.js";
 
 /**
  * Printable invoice.
@@ -11,13 +12,13 @@ import React from "react";
  *
  * GST note: the order stores a single gstAmount. Indian invoices split this
  * into CGST + SGST for an intra-state sale, which is what a Tamil Nadu shop
- * billing a Tamil Nadu customer has. Anything else (IGST, HSN codes, the
- * seller's GSTIN) needs data the business has not supplied yet.
+ * billing a Tamil Nadu customer has. IGST (an out-of-state customer) is not
+ * handled, and per-item HSN codes are not set on products — see Billing.jsx.
  */
 const money = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const InvoiceDocument = ({ order, seller = {} }) => {
+const InvoiceDocument = ({ order, seller = SELLER }) => {
   if (!order?.orderId) return null;
 
   const addr = order.shippingAddress || {};
