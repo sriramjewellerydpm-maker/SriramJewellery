@@ -53,7 +53,7 @@ const About = () => {
           <img 
             className="w-full h-full object-cover transition-transform duration-[10000ms] ease-out hover:scale-105" 
             alt="Artisan working on gold jewellery" 
-            src="https://images.unsplash.com/photo-1579246187702-6012cc4b5bfb?auto=format&fit=crop&w=1600&q=80"
+            src="/images/artisan.jpg"
           />
         </div>
       </section>
@@ -159,7 +159,7 @@ const About = () => {
                   <img
                     className="w-full h-full object-cover"
                     alt="Map Location"
-                    src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=800&q=80"
+                    src="/images/world-map.jpg"
                   />
                   <div className="absolute inset-0 bg-primary/5 group-hover:bg-transparent transition-colors"></div>
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

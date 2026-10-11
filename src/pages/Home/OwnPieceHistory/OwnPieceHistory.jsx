@@ -6,7 +6,7 @@ const OwnPieceHistory = () => {
       <div className="grid grid-cols-1 md:grid-cols-2">
         {/* Imagery Side */}
         <div className="relative h-64 md:h-auto overflow-hidden">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuApzFrTekLs5VImMwPoytc0EoBU2ScA9wY_7mepEJuzwd42LA9TKx-ChBAJdUadjYFd_1KQ1ZlE3KdaZxDZkFstwhdMd0484GS6YyJFQjfPtp6CzcEvnCnV4jMRHvMtMX7v-tHIxk5rJGzsMzoR1sC6D7Z9G20NbObrwygl2eVmfZiL-Y0wumevRewnnAAinUzk7thEikuQMEdcUOpE1sNhIYUiLUwrq6sXLUIADiHO0e8CTF6wZUFJmAGCWiyCLT32qv2be_JPhts')" }}></div>
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/images/own-piece.jpg')" }}></div>
           <div className="absolute inset-0 bg-primary/20 backdrop-multiply"></div>
         </div>
         {/* Content Side */}

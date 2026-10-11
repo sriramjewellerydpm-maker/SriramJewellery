@@ -81,7 +81,7 @@ const AdminNavigation = () => {
           <div className="flex flex-col gap-4">
             <div className="w-24 h-24 mx-auto">
               <img
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrNSXG2SMYhyPtorDFWVyvwy4-mU1tSsorVJXWvd8l7jvfYHHZq3Vvhv3p6lzscI0uU-XwURt0lT_1hiZalq78rmS5U1vEkVtNQspNPoRd8xZJ0zyJqymo2VQW-14NJ34CwtsKE48wsigwEtJjY63BEU2MOu5FNXgA4lvIXWMy1LgUufhhPuV5JG5nsmjrGTTi4rFucteF-YEd09g4wb_Q_h8aVilTj7OG8VmtfHTAcnDG8ybAmT-e4NxXtFdSq35NjUcSwuS1TOw"
+                src="/logo.png"
                 alt="Sri Ram Jewellery Logo"
                 className="w-full h-full object-contain"
               />

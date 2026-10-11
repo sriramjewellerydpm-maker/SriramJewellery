@@ -6,9 +6,9 @@ const SeasonMasterpieces = () => {
   const [products, isProductsLoading] = useProducts();
 
   const fallbackImages = [
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuA50x0y5imFYK00xXphjLkXenRuRpzPWcd5NVgxc1wSY6dWz7GdCR0uEn2G0_yD4EG4G1uLrjSYw_Tu1kPwWlAqs7n1La_Nza-ZD91d4XOP2yZoYcNaENrCNMnjKzf4I7QQwuDwMTO2XnfMN8srDXirsSrEYtWiMj3jEy19E2jnGdyvGcIn6wMIAjZ5qFE-ilV97BRJt5Qj_l7G7ylcpcSppv9BeI2xWxBcqUmRRJOdSE6AR2XPvHhYxinE3iWaMSaT838v0BTMn7c",
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuDFBw7YPXt4hS_H3Aa9fW3oru67obHm_tZKHc565pb1XPZTBQtA4TrbjFNsbGIW_n3h4npOBt5JuTpy5-djPgA1q8W2RlpxYER_F-NEJ8txCpm_lAPpTSkyjpU4k5HLfkpMaiVBwLwoAnmY9FWYlWF-THoX1sKIMlfCG7Gm0KIne_iuPLbHDMmGCItP1vJpmbfi1JcYVfwFIWzt0gG6AxlE3UiqAkL7CY-OrkosDsohN2LQ06E0UkIksX2wfULwXqT07VMA_EK5xk4",
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuD5nHWPuLBABkd9E1BshlaIA1Mzvvrc5X3FJtE5sUr-Q5sfVDu-GrVOkiF6NqrgE9HZt3L455GNJLXN5pv59Nr0XLdN1eAW_gAPHiNICOgf9Ohp6gfHcfdC6Z0TVRcYutQdhNqoofGifRbig2Rd3_oDdj3vUpYeO0CpnUEpeQ7rYSgSrGV5ecp7jFMEm_OAtlSBkfs9UD0aAc7fOMRpu_ipeGj32wPC7JcwPKlPZ5HpDO7683_-HhyPpnsEpzaV1poVbiYiteWIbtU"
+    "/images/featured-1.jpg",
+    "/images/featured-2.jpg",
+    "/images/featured-3.jpg"
   ];
 
   const featuredItems = products?.slice(0, 3) || [];

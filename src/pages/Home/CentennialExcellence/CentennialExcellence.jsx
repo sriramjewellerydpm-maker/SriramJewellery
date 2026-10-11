@@ -5,7 +5,7 @@ import useCategories from '../../../hooks/useCategories';
 const CentennialExcellence = () => {
   const { categories, isCategoriesLoading } = useCategories();
 
-  const fallbackImg = "https://lh3.googleusercontent.com/aida-public/AB6AXuAWYaCsfB60R5X3Clo71_Qg308Te0kZ8324t7VqFs8cBdJPGGHcpXGGlxgDL_A0Fbqzb-KUhpXMm0WFa8jeK7bEKgYVK8kX_-35bv2NdzIySEZTHLukz3XXh8vLHLeMwdo0wRjHS6Gsv22KBwA1tRhpujERzJ1vFOaaXFnzZFT4Uf1w1G7RWDkT6WEtqkWBYccqFl3_yNBLIcK4yjoxmEgdOcWCKFPgwP_lOcKD9bdnj4Vo0jM8ZG7XKdU-qJzVmPNrN_tP33FxVQU";
+  const fallbackImg = "/images/artisan.jpg";
   const getCatImg = (cat) => cat?.image || cat?.categoryPic || fallbackImg;
 
   return (
