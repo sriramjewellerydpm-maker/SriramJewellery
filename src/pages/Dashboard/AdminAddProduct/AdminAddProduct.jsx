@@ -5,7 +5,6 @@ import PriceBreakdownPreview from "../../../components/PriceBreakdownPreview/Pri
 import useRates from "../../../hooks/useRates";
 import { Link, useLocation, useParams } from "react-router-dom";
 import uploadIcon from "../../../assets/image-upload.png";
-import axios from "axios";
 import { getApiBaseUrl } from "../../../utils/apiConfig";
 import useAuthContext from "../../../hooks/useAuthContext";
 import Select from "react-select";
@@ -14,6 +13,8 @@ import useProducts from "../../../hooks/useProducts";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import useCategories from "../../../hooks/useCategories";
 import { optimizeCloudinaryUrl } from "../../../utils/cloudinaryImage";
+import { uploadToCloudinary, MAX_IMAGE_BYTES } from "../../../utils/uploadToCloudinary";
+import { getErrorMessage } from "../../../utils/errorMessage";
 
 const AdminAddProduct = () => {
   const { user } = useAuthContext();
@@ -104,22 +105,6 @@ const AdminAddProduct = () => {
 
   // Uploads directly to Cloudinary using a short-lived signature minted by our
   // server, so the API secret never reaches the browser.
-  const uploadProductImage = async (file) => {
-    const { data: sig } = await axiosSecure.get("/admin/cloudinary-signature");
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("api_key", sig.apiKey);
-    formData.append("timestamp", sig.timestamp);
-    formData.append("signature", sig.signature);
-
-    const { data: uploaded } = await axios.post(
-      `https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`,
-      formData
-    );
-    return uploaded.secure_url;
-  };
-
   const onSubmit = async (data) => {
     try {
       const badges = data?.selectedBadges?.map((b) => b?.value);
@@ -154,7 +139,7 @@ const AdminAddProduct = () => {
     };
 
     const imgFile = data.productImg?.[0];
-    if (imgFile?.size > 2097152) {
+    if (imgFile?.size > MAX_IMAGE_BYTES) {
       Swal.fire({
         title: "Image Size Exceeded!",
         text: "Your product image size is more than 2MB.",
@@ -176,10 +161,14 @@ const AdminAddProduct = () => {
 
     if (imgFile) {
       try {
-        product.img = await uploadProductImage(imgFile);
+        product.img = await uploadToCloudinary(imgFile, axiosSecure);
       } catch (uploadError) {
         console.error(uploadError);
-        Swal.fire("Upload Failed", "Could not upload image to Cloudinary", "error");
+        // The real reason, not just "it failed". A missing CLOUDINARY_URL
+        // answers 503 "Cloudinary is not configured", an expired session 401,
+        // and Cloudinary's own refusals carry their message — all of which the
+        // shop owner can act on, where the old generic line left them stuck.
+        Swal.fire("Upload Failed", getErrorMessage(uploadError, "Could not upload the image. Please try again."), "error");
         return;
       }
     } else {
