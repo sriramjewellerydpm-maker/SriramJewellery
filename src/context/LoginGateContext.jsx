@@ -10,13 +10,27 @@ const LoginGateContext = createContext(null);
 
 const PENDING_KEY = "sri-ram-pending-action";
 
-/** Active time on the site before the sign-in prompt appears once. */
+/** Active time on the site before the sign-in prompt first appears. */
 export const AUTH_PROMPT_DELAY_MS = 30000;
-/** How long a dismissal keeps the timed prompt away. */
-export const AUTH_PROMPT_DISMISS_DAYS = 7;
+/**
+ * Active time before it comes back, if the visitor closed it without signing
+ * in. Minutes rather than seconds on purpose: a modal every half-minute makes
+ * the catalogue unbrowsable, and Google demotes mobile pages that do it.
+ */
+export const AUTH_PROMPT_REPEAT_MS = 180000;
+/** How many times one visit may be interrupted, first prompt included. */
+export const AUTH_PROMPT_MAX_PER_SESSION = 3;
+/**
+ * How long the whole allowance stays spent once a visitor has turned it down.
+ *
+ * This was seven days, and it was charged on the FIRST close — so one dismissal
+ * bought a week of silence and the feature looked broken to anyone testing it.
+ * It is now charged only after the session's last nudge, and a day is enough.
+ */
+export const AUTH_PROMPT_DISMISS_DAYS = 1;
 
 const DISMISSED_UNTIL_KEY = "sri-ram-auth-prompt-dismissed-until"; // localStorage
-const SHOWN_THIS_SESSION_KEY = "sri-ram-auth-prompt-shown"; // sessionStorage
+const SHOWN_COUNT_KEY = "sri-ram-auth-prompt-count"; // sessionStorage
 
 // Never prompt here: the purchase itself (checkout and the payment step), the
 // admin dashboard, and the pages that are already about signing in.
@@ -60,8 +74,10 @@ const rememberDismissal = () =>
     localStorage.setItem(DISMISSED_UNTIL_KEY, String(Date.now() + AUTH_PROMPT_DISMISS_DAYS * 24 * 60 * 60 * 1000))
   );
 
-const shownThisSession = () => safe(() => sessionStorage.getItem(SHOWN_THIS_SESSION_KEY) === "1", false);
-const markShownThisSession = () => safe(() => sessionStorage.setItem(SHOWN_THIS_SESSION_KEY, "1"));
+/** How many timed prompts this visit has already seen. */
+const shownCount = () => safe(() => Number(sessionStorage.getItem(SHOWN_COUNT_KEY)) || 0, 0);
+const countOneShown = () =>
+  safe(() => sessionStorage.setItem(SHOWN_COUNT_KEY, String(shownCount() + 1)));
 
 const isPromptPath = (pathname) => !NO_PROMPT_PATHS.some((re) => re.test(pathname));
 
@@ -77,9 +93,11 @@ const AUTH_PAGE_PATHS = /^\/(login|register)(\/|$)/;
  *   - requireLogin({ message, intent }) — Add to Bag, Buy Now, wishlist, the
  *     drawer's Checkout. Opens immediately, timer and dismissal regardless;
  *     the intent is replayed after sign-in by useResumePendingAction.
- *   - the timed prompt — once per session, after AUTH_PROMPT_DELAY_MS of
- *     active (visible-tab) time, never on NO_PROMPT_PATHS, never over another
- *     dialog, and not again for 7 days once dismissed.
+ *   - the timed prompt — after AUTH_PROMPT_DELAY_MS of active (visible-tab)
+ *     time, returning after AUTH_PROMPT_REPEAT_MS if it was closed without a
+ *     sign-in, up to AUTH_PROMPT_MAX_PER_SESSION times a visit. Never on
+ *     NO_PROMPT_PATHS, never over another dialog, and once the visitor has
+ *     turned down the last of them, not again for AUTH_PROMPT_DISMISS_DAYS.
  *
  * And one rule: a signed-in customer always has a name and a phone. The
  * session is issued with the code, before the details step, so leaving that
@@ -94,7 +112,10 @@ export const LoginGateProvider = ({ children }) => {
   const [profile] = useUserInfo();
   const location = useLocation();
   const navigate = useNavigate();
-  const [modal, setModal] = useState({ open: false, message: "", profilePrompt: null });
+  const [modal, setModal] = useState({ open: false, message: "", profilePrompt: null, timed: false });
+  // Bumped when a timed prompt is closed, which restarts the clock below for
+  // the next one. Without it the effect would never run a second time.
+  const [promptRound, setPromptRound] = useState(0);
   const signingOutRef = useRef(false);
 
   // Customers only: an administrator's account has no delivery details.
@@ -117,7 +138,12 @@ export const LoginGateProvider = ({ children }) => {
 
   // ── Timed prompt: count only time the tab is visible ────────────────────
   useEffect(() => {
-    if (isAuthLoading || user || shownThisSession() || dismissedRecently()) return undefined;
+    if (isAuthLoading || user || dismissedRecently()) return undefined;
+    const already = shownCount();
+    if (already >= AUTH_PROMPT_MAX_PER_SESSION) return undefined;
+
+    // Half a minute to the first; minutes to each one after it.
+    const target = already === 0 ? AUTH_PROMPT_DELAY_MS : AUTH_PROMPT_REPEAT_MS;
 
     let activeMs = 0;
     let last = performance.now();
@@ -139,12 +165,12 @@ export const LoginGateProvider = ({ children }) => {
     const tick = setInterval(() => {
       if (done) return;
       accrue();
-      if (activeMs < AUTH_PROMPT_DELAY_MS) return;
+      if (activeMs < target) return;
       // Due — but wait for a moment when it is allowed to appear.
       if (userRef.current || !isPromptPath(pathRef.current) || isAnyDialogOpen() || dismissedRecently()) return;
       done = true;
-      markShownThisSession();
-      setModal({ open: true, message: "", profilePrompt: null });
+      countOneShown();
+      setModal({ open: true, message: "", profilePrompt: null, timed: true });
     }, 1000);
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -152,7 +178,7 @@ export const LoginGateProvider = ({ children }) => {
       clearInterval(tick);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user, isAuthLoading]);
+  }, [user, isAuthLoading, promptRound]);
 
   // ── Incomplete profile: back to the details step ──────────────────────
   useEffect(() => {
@@ -176,11 +202,22 @@ export const LoginGateProvider = ({ children }) => {
 
   const handleDismiss = useCallback(
     ({ signedInMidFlow } = {}) => {
-      setModal({ open: false, message: "", profilePrompt: null });
+      const wasTimed = modal.timed;
+      setModal({ open: false, message: "", profilePrompt: null, timed: false });
       // Declining to sign in also declines the action that asked for it.
       if (!signedInMidFlow) {
         clearPendingAction();
-        rememberDismissal();
+        if (wasTimed) {
+          // Closing one of the session's nudges only costs that nudge. Quiet
+          // for a day is earned by turning down the last of them, not the
+          // first — charging it on the first is what made this look dead.
+          if (shownCount() >= AUTH_PROMPT_MAX_PER_SESSION) rememberDismissal();
+          setPromptRound((round) => round + 1);
+        } else {
+          // Closed a prompt they triggered themselves by trying to do
+          // something that needs an account. That is a clear "not now".
+          rememberDismissal();
+        }
         return;
       }
       // Closed at the details step: no session without a name and a phone.
@@ -190,13 +227,13 @@ export const LoginGateProvider = ({ children }) => {
         toast("You're signed out. We need your name and mobile number to finish setting up your account.")
       );
     },
-    [logOut]
+    [logOut, modal.timed]
   );
 
   const handleComplete = useCallback(
     ({ isNewAccount } = {}) => {
       const wasProfilePrompt = Boolean(modal.profilePrompt);
-      setModal({ open: false, message: "", profilePrompt: null });
+      setModal({ open: false, message: "", profilePrompt: null, timed: false });
       if (readPendingAction()) return; // useResumePendingAction finishes what they started
       if (wasProfilePrompt) {
         toast.success("Thank you — your details are saved.");
