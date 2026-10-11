@@ -61,7 +61,7 @@ export const CONTACT = {
   phone: {
     // The number the client confirmed for customer contact, and the one the
     // WhatsApp button uses. Staffed hours have not been given.
-    address: "+91 93637 50806",
+    address: "++91 82484 56747",
     purpose: "Published support telephone number and staffed hours",
   },
 };

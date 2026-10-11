@@ -18,7 +18,7 @@ export const CANONICAL_PHONE = /^\+91[6-9]\d{9}$/;
 /**
  * Reduce any of the shapes customers and clients actually send to +91XXXXXXXXXX.
  *
- * Accepts: 9363750806 · +91 9363750806 · 91-9363750806 · 09363750806
+ * Accepts: +91 82484 56747 · +91 +91 82484 56747 · 91-+91 82484 56747 · 0+91 82484 56747
  *          and the same with spaces, dashes, brackets or a leading 0.
  *
  * @returns {{ ok: true, phone: string } | { ok: false, reason: string }}

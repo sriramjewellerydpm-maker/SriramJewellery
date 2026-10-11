@@ -9,7 +9,7 @@ import puppeteer from 'puppeteer';
   
   // Wait for login form
   await page.waitForSelector('input[type="tel"]');
-  await page.type('input[type="tel"]', '9363750806');
+  await page.type('input[type="tel"]', '+91 82484 56747');
   await page.click('button[type="submit"]');
   
   // Wait for OTP input

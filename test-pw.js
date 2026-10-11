@@ -13,7 +13,7 @@ import { chromium } from 'playwright';
 
   console.log("Filling login phone...");
   await page.waitForSelector('input[type="tel"]');
-  await page.fill('input[type="tel"]', '9363750806');
+  await page.fill('input[type="tel"]', '+91 82484 56747');
   await page.click('button[type="submit"]');
 
   console.log("Waiting for OTP input...");

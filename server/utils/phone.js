@@ -5,7 +5,7 @@
  * canonical form of a customer's identity was decided in the browser. Anything
  * that reached the API by another path — curl, a second client, an older cached
  * bundle, a direct POST — was written to the database verbatim. That is how
- * "9363750806" and "+919363750806" became two accounts for one person, each
+ * "+91 82484 56747" and "+91+91 82484 56747" became two accounts for one person, each
  * with its own cart, wishlist and order history.
  *
  * The phone number is the primary key of a customer's identity here (there is
@@ -28,10 +28,10 @@ import { normalizeIndianPhone } from "../../shared/phone.js";
 export const phoneVariants = (canonical) => {
   const national = canonical.replace(/^\+91/, "");
   return [
-    canonical,          // +919363750806
-    national,           // 9363750806
-    `91${national}`,    // 919363750806
-    `0${national}`,     // 09363750806
+    canonical,          // +91+91 82484 56747
+    national,           // +91 82484 56747
+    `91${national}`,    // 91+91 82484 56747
+    `0${national}`,     // 0+91 82484 56747
     `+91 ${national}`,  // spaced, as some clients sent it
   ];
 };

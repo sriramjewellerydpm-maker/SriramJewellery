@@ -7,7 +7,7 @@
  *
  * Two distinct problems, handled differently:
  *
- *  1. A single account stored in a non-canonical spelling ("9363750806").
+ *  1. A single account stored in a non-canonical spelling ("+91 82484 56747").
  *     Safe: rewrite the phone field in place. Nothing else changes.
  *
  *  2. Several accounts that resolve to the SAME canonical number. A real
