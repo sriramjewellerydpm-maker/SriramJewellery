@@ -30,6 +30,37 @@ listed in `TEST_OTP_EMAILS` — but keep them out of production entirely.)
 **Preview deployments run as production** (`NODE_ENV=production`), so they need
 the same email variables. The console fallback below never runs on a preview.
 
+### Two traps that cost real time
+
+**Check the value is not still the template.** Before investigating anything
+else about a misconfigured service, confirm the variable does not still hold
+the placeholder from `.env.example`. `CLOUDINARY_URL` was once set to the
+literal `cloudinary://<your_api_key>:<your_api_secret>@<cloud_name>`, angle
+brackets and all. The server signed every upload with an api_secret of
+`<your_api_secret>` and Cloudinary answered 403, which looks exactly like a
+revoked key, a clock-skew problem or a quota. It is a five-second check and it
+goes first:
+
+```
+# anything still carrying < > is unfilled
+grep -nE '<[a-z_]+>' .env
+```
+
+**Never paste a bcrypt hash into the Atlas Data Explorer field editor.** It
+doubles the leading `$`, giving `$$2b$12$…`. bcrypt cannot parse that, so every
+sign-in fails with "Invalid email or password" and nothing anywhere says why.
+Use `mongosh`, or the Data Explorer's JSON view. Verify after writing — the
+stored value must be exactly 60 characters and begin `$2b$12$`:
+
+```js
+const u = db.users.findOne({ role: "ADMIN" }, { email: 1, passwordHash: 1 });
+print(u.passwordHash.length + "  " + u.passwordHash.slice(0, 7));   // 60  $2b$12$
+```
+
+This affects `User.passwordHash` and the two `otpHash` fields, the only stored
+values containing `$`. The refresh and password-reset token hashes are sha256
+hex and carry none.
+
 ### What happens when email is not configured
 
 The server still starts and product pages keep working (same as a missing
