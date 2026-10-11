@@ -8,6 +8,8 @@ import { PasswordResetToken } from "../models/PasswordResetToken.js";
 import { sendMail, sendEmail, renderEmailLayout, emailButton, canDeliverEmail } from "../utils/email.js";
 import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
 import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from "../middleware/validate.js";
+import { signInCodeEmail } from "../emails/signInCode.js";
+import { passwordResetEmail } from "../emails/passwordReset.js";
 import { verifyJWT, JWT_SECRET } from "../middleware/auth.js";
 import { otpLimiter, otpVerifyLimiter, otpRecipientLimiter, authLimiter } from "../middleware/rateLimit.js";
 import { normalizeEmail, canonicalEmailKey } from "../utils/emailIdentity.js";
@@ -242,10 +244,12 @@ router.post("/otp/request", otpLimiter, otpRecipientLimiter, async (req, res) =>
       return res.json(OTP_SENT);
     }
 
+    const codeMail = signInCodeEmail({ code: otp, expiryMinutes: OTP_EXPIRY_MINUTES });
     const sent = await sendMail({
       to: display,
       subject: "Your Sri Ram Jewellery sign-in code",
-      text: otpEmailText(otp),
+      text: codeMail.text,
+      html: codeMail.html,
       tag: "sign-in-code",
     });
 
@@ -705,24 +709,16 @@ router.post("/password/forgot", authLimiter, async (req, res) => {
     const base = (process.env.PUBLIC_SITE_URL || "http://localhost:5173").replace(/\/$/, "");
     const resetUrl = `${base}/reset-password?token=${rawToken}`;
 
+    const resetMail = passwordResetEmail({
+      resetUrl,
+      expiryMinutes: PASSWORD_RESET_EXPIRY_MS / 60000,
+    });
     const result = await sendEmail({
       to: email,
       subject: "Reset your Sri Ram Jewellery administrator password",
       tag: "password-reset",
-      html: renderEmailLayout({
-        heading: "Reset your password",
-        intro:
-          "We received a request to reset the password for your administrator account. " +
-          `This link is valid for ${PASSWORD_RESET_EXPIRY_MS / 60000} minutes and can be used once.`,
-        bodyHtml:
-          emailButton(resetUrl, "Choose a new password") +
-          `<p style="margin:20px 0 0;font-size:13px;line-height:1.6;color:#8d8279;word-break:break-all;">
-             If the button does not work, paste this into your browser:<br>${resetUrl}
-           </p>`,
-        footerNote:
-          "If you did not request this, you can ignore this email — your password has not changed. " +
-          "If you receive these repeatedly, someone may know your email address; consider changing it.",
-      }),
+      html: resetMail.html,
+      text: resetMail.text,
     });
 
     if (!result.ok) {

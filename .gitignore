@@ -58,3 +58,6 @@ tests/e2e/artifacts/
 .github
 .vscode
 
+
+# Rendered email previews (server/scripts/previewEmail.js)
+tmp/

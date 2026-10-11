@@ -65,8 +65,16 @@ describe("POST /api/auth/otp/request (email)", () => {
     expect(mail.text).toMatch(/Sri Ram Jewellery sign-in code is \d{6}/);
     expect(mail.text).toMatch(/expires in 5 minutes/);
     expect(mail.text).toMatch(/did not try to sign in, ignore this email/);
-    expect(mail.html).toBeUndefined();
-    expect(await bcrypt.compare(lastCodeSentTo(typed.trim()), u.otpHash)).toBe(true);
+    // The code must survive into BOTH parts. A client showing text-only, or one
+    // with images blocked, still has to let the customer sign in — which is why
+    // the code is selectable text in the HTML rather than a picture of it.
+    const code = lastCodeSentTo(typed.trim());
+    expect(mail.html).toContain(code);
+    expect(mail.text).toContain(code);
+    // Mail clients resolve no CSS variables and render Outlook through Word.
+    expect(mail.html).not.toMatch(/var\(--/);
+    expect(mail.html).not.toMatch(/display:\s*(flex|grid)/);
+    expect(await bcrypt.compare(code, u.otpHash)).toBe(true);
   });
 
   it("dots, +aliases, case and whitespace on gmail.com / googlemail.com all reach ONE account", async () => {
