@@ -4,6 +4,7 @@ import { User } from "../models/User.js";
 import { Order } from "../models/Order.js";
 import { REVENUE_MATCH } from "../utils/revenue.js";
 import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from "../middleware/validate.js";
 import { verifyJWT, requireAdmin } from "../middleware/auth.js";
 import mongoose from "mongoose";
 import { validate, updateProfileSchema, changePasswordSchema, shippingAddressSchema, adminUpdateUserSchema, objectIdParam } from "../middleware/validate.js";
@@ -116,8 +117,8 @@ router.patch("/me/password", verifyJWT, validate(changePasswordSchema), async (r
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: "Current and new password are required" });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      return res.status(400).json({ error: `New ${PASSWORD_TOO_SHORT[0].toLowerCase()}${PASSWORD_TOO_SHORT.slice(1)}` });
     }
 
     const user = await User.findById(req.user.userId);

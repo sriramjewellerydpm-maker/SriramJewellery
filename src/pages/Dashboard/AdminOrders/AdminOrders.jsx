@@ -58,6 +58,13 @@ const AdminOrders = () => {
     if (approvalStatus === "REJECTED") {
       rejectionReason = window.prompt("Why is this order being declined? The customer will see this.");
       if (rejectionReason === null) return;
+      // window.prompt takes no maxLength, so the only place to catch an
+      // over-long reason is here — otherwise the server answers 400 and the
+      // typed reason is gone with the prompt.
+      if (rejectionReason.length > 500) {
+        toast.error("Reason must be under 500 characters");
+        return;
+      }
       if (!rejectionReason.trim()) {
         toast.error("A reason is required when declining an order");
         return;

@@ -4,6 +4,32 @@ import { AUTH_CODES } from "../../shared/authCodes.js";
 
 const parse = (schema, body) => schema.safeParse(body);
 
+describe("password minimum (one rule, every place that sets one)", () => {
+  // The rule was stated in five places and two of them disagreed: the reset
+  // screen promised 8 while the server accepted 6. Nothing failed when the
+  // server was raised to 8, because nothing tested the boundary.
+  const SHORT = "a".repeat(S.PASSWORD_MIN_LENGTH - 1);
+  const OK = "a".repeat(S.PASSWORD_MIN_LENGTH);
+
+  it("is 8", () => {
+    expect(S.PASSWORD_MIN_LENGTH).toBe(8);
+  });
+
+  it.each([
+    ["registerSchema", (pw) => parse(S.registerSchema, { email: "a@b.co", password: pw })],
+    ["changePasswordSchema", (pw) => parse(S.changePasswordSchema, { currentPassword: "whatever", newPassword: pw })],
+  ])("%s refuses one character short and accepts the minimum", (_name, run) => {
+    const short = run(SHORT);
+    expect(short.success).toBe(false);
+    expect(JSON.stringify(short.error.issues)).toMatch(new RegExp(`${S.PASSWORD_MIN_LENGTH} characters`));
+    expect(run(OK).success).toBe(true);
+  });
+
+  it("the message names the real figure, so the screens cannot drift from it again", () => {
+    expect(S.PASSWORD_TOO_SHORT).toContain(String(S.PASSWORD_MIN_LENGTH));
+  });
+});
+
 describe("validate() middleware", () => {
   it("400s with the first issue and a details list", () => {
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };

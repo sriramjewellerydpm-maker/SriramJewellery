@@ -7,6 +7,7 @@ import { RefreshToken } from "../models/RefreshToken.js";
 import { PasswordResetToken } from "../models/PasswordResetToken.js";
 import { sendMail, sendEmail, renderEmailLayout, emailButton, canDeliverEmail } from "../utils/email.js";
 import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from "../middleware/validate.js";
 import { verifyJWT, JWT_SECRET } from "../middleware/auth.js";
 import { otpLimiter, otpVerifyLimiter, otpRecipientLimiter, authLimiter } from "../middleware/rateLimit.js";
 import { normalizeEmail, canonicalEmailKey } from "../utils/emailIdentity.js";
@@ -457,8 +458,8 @@ router.post("/register", validate(registerSchema), async (req, res) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      return res.status(400).json({ error: PASSWORD_TOO_SHORT });
     }
 
     // Check if user already exists
@@ -757,10 +758,11 @@ router.post("/password/reset", authLimiter, async (req, res) => {
     if (!token || !password) {
       return res.status(400).json({ error: "Reset token and new password are required" });
     }
-    if (String(password).length < 8) {
-      // Deliberately stricter than the 6 used elsewhere: this password is the
-      // only thing standing between a stranger and the admin dashboard.
-      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    if (String(password).length < PASSWORD_MIN_LENGTH) {
+      // This route used to be deliberately stricter than the 6 enforced
+      // elsewhere. Everywhere now uses that stricter figure, so the special
+      // case is gone and the rule has one definition.
+      return res.status(400).json({ error: PASSWORD_TOO_SHORT });
     }
 
     const tokenHash = crypto.createHash("sha256").update(String(token)).digest("hex");

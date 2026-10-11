@@ -3,11 +3,15 @@ import { useQuery } from "react-query";
 import toast from "react-hot-toast";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import { getErrorMessage } from "../../../utils/errorMessage";
+import { RATE_BOUNDS } from "../../../../shared/rateBounds.js";
 
 const AdminLiveRates = () => {
   // Bounds are served by GET /api/rates so the hint always matches whatever
   // the server will actually accept.
-  const DEFAULT_BOUNDS = { gold: { min: 2000, max: 50000 }, silver: { min: 20, max: 5000 } };
+  // The server sends its own bounds with the rates; these are only the
+  // fallback for the first render, and they are the SAME definition the
+  // server validates against rather than a second copy of the numbers.
+  const DEFAULT_BOUNDS = RATE_BOUNDS;
   const [axiosSecure] = useAxiosSecure();
   const [goldRate, setGoldRate] = useState("");
   const [silverRate, setSilverRate] = useState("");

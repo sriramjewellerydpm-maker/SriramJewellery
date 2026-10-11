@@ -90,6 +90,7 @@ const AccountDetails = () => {
               className="border-0 border-b border-outline-variant bg-transparent w-full py-3 transition-colors outline-none focus:ring-0 focus:border-primary font-body-base text-on-surface"
               placeholder="Your full name"
               type="text"
+              maxLength={100}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -196,11 +197,11 @@ const AccountDetails = () => {
                 <label className="font-label-caps text-label-caps text-outline uppercase block">New Password</label>
                 <input
                   className="border-0 border-b border-outline-variant bg-transparent w-full py-3 transition-colors outline-none focus:ring-0 focus:border-primary font-body-base text-on-surface"
-                  placeholder="Min. 6 characters"
+                  placeholder="Min. 8 characters"
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  minLength={6}
+                  minLength={8}
                   required
                 />
               </div>
@@ -212,7 +213,7 @@ const AccountDetails = () => {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  minLength={6}
+                  minLength={8}
                   required
                 />
               </div>

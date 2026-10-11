@@ -7,18 +7,13 @@
  * deliberately wide: the job is to catch an order-of-magnitude slip (a missing
  * digit, a paise/rupee mix-up), not to track the market.
  *
- * Single source of truth — the zod schema, the admin form and the dashboard
- * warning all read these.
+ * The bounds themselves live in shared/rateBounds.js so the admin rate form
+ * can import them too; this module adds the staleness rules, which depend on
+ * process.env and so cannot be shared with the browser.
  */
 
-export const RATE_BOUNDS = {
-  // Real 22K/24K gold sits in the thousands per gram. ₹2,000 is far below any
-  // plausible market and ₹50,000 far above, so both ends leave ample headroom.
-  gold: { min: 2000, max: 50000 },
-  // Silver is two orders of magnitude cheaper, so it needs its own band —
-  // ₹96/gram is nonsense for gold but entirely normal for silver.
-  silver: { min: 20, max: 5000 },
-};
+export { RATE_BOUNDS } from "../../shared/rateBounds.js";
+import { RATE_BOUNDS } from "../../shared/rateBounds.js";
 
 export const MIN_GOLD_RATE_PER_GRAM = RATE_BOUNDS.gold.min;
 export const MAX_GOLD_RATE_PER_GRAM = RATE_BOUNDS.gold.max;

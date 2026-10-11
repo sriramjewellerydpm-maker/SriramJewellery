@@ -40,10 +40,23 @@ const requiredString = (message, max) => {
   return max ? schema.max(max, message) : schema;
 };
 
+/**
+ * The shortest password accepted when one is SET. Not applied at sign-in —
+ * /auth/login deliberately skips validation, so raising this never locks out
+ * an account whose password predates the change; it only applies the next time
+ * one is chosen.
+ *
+ * Declared once because the rule is stated in three places (register, change
+ * password, and the two client screens) and they had already drifted: the
+ * reset screen claimed 8 while the server accepted 6.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_TOO_SHORT = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
+
 export const registerSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
   email: z.email("Valid email is required"),
-  password: z.string({ error: "Password is required" }).min(6, "Password must be at least 6 characters"),
+  password: z.string({ error: "Password is required" }).min(PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT),
 });
 
 export const loginSchema = z.object({
@@ -334,7 +347,7 @@ export const adminUpdateUserSchema = z.strictObject({
 
 export const changePasswordSchema = z.object({
   currentPassword: requiredString("Current password is required"),
-  newPassword: z.string({ error: "New password is required" }).min(6, "New password must be at least 6 characters"),
+  newPassword: z.string({ error: "New password is required" }).min(PASSWORD_MIN_LENGTH, `New ${PASSWORD_TOO_SHORT[0].toLowerCase()}${PASSWORD_TOO_SHORT.slice(1)}`),
 });
 
 // Mirrors the AddressBook form, which posts the whole address as one object.

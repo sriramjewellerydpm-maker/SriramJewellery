@@ -302,8 +302,17 @@ const AdminAddProduct = () => {
                     name="description"
                     rows="8"
                     className="w-full bg-transparent border-0 border-b border-outline-variant py-3 px-0 focus:ring-0 text-on-surface placeholder:text-on-surface-variant/30 transition-ui duration-300 outline-none focus:border-primary resize-none"
-                    {...register("description")}
+                    {...register("description", {
+                      // A react-hook-form rule, not the maxLength attribute:
+                      // the attribute stops the keystroke silently, so a long
+                      // description looks like a broken textarea. This says
+                      // what is wrong, and matches the server's own 5,000.
+                      maxLength: { value: 5000, message: "Description must be under 5,000 characters" },
+                    })}
                   ></textarea>
+                  {errors.description && (
+                    <span className="text-error text-xs italic mt-1 block">{errors.description.message}</span>
+                  )}
                 </div>
 
                 {/* advantages input */}
@@ -313,9 +322,22 @@ const AdminAddProduct = () => {
                     name="advantages"
                     rows="4"
                     className="w-full bg-transparent border-0 border-b border-outline-variant py-3 px-0 focus:ring-0 text-on-surface placeholder:text-on-surface-variant/30 transition-ui duration-300 outline-none focus:border-primary resize-none"
-                    {...register("advantages")}
+                    {...register("advantages", {
+                      // The server caps each advantage at 200 characters and
+                      // the list at 30; this is a comma-separated field, so
+                      // both are checked here rather than on a bare length.
+                      validate: (v) => {
+                        const items = String(v || "").split(",").map((t) => t.trim()).filter(Boolean);
+                        if (items.length > 30) return "No more than 30 advantages";
+                        if (items.some((t) => t.length > 200)) return "Each advantage must be under 200 characters";
+                        return true;
+                      },
+                    })}
                     placeholder="Separate each advantage with comma(,)"
                   ></textarea>
+                  {errors.advantages && (
+                    <span className="text-error text-xs italic mt-1 block">{errors.advantages.message}</span>
+                  )}
                 </div>
               </div>
 

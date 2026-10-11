@@ -29,6 +29,7 @@ import { User } from "../models/User.js";
 import { RefreshToken } from "../models/RefreshToken.js";
 import { PasswordResetToken } from "../models/PasswordResetToken.js";
 import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
+import { PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT } from "../middleware/validate.js";
 
 dotenv.config();
 
@@ -94,8 +95,8 @@ const run = async () => {
   }
 
   const supplied = arg("--password");
-  if (supplied && supplied.length < 8) {
-    console.error("Password must be at least 8 characters.");
+  if (supplied && supplied.length < PASSWORD_MIN_LENGTH) {
+    console.error(`${PASSWORD_TOO_SHORT}.`);
     await mongoose.disconnect();
     process.exit(1);
   }

@@ -198,7 +198,15 @@ const DynamicProduct = () => {
   // rather than out of stock, so those products stay purchasable.
   const hasStockField = typeof dynamicProduct.stock === "number";
   const isOutOfStock = hasStockField && dynamicProduct.stock <= 0;
-  const maxQuantity = hasStockField && dynamicProduct.stock > 0 ? dynamicProduct.stock : 99;
+  // Capped at the server's own limit (validate.js, MAX_ORDER_QUANTITY) as well
+  // as at stock: offering 120 of a well-stocked piece only to have checkout
+  // answer 400 "Quantity cannot exceed 99" wastes the customer's time at the
+  // worst moment.
+  const MAX_ORDER_QUANTITY = 99;
+  const maxQuantity = Math.min(
+    hasStockField && dynamicProduct.stock > 0 ? dynamicProduct.stock : MAX_ORDER_QUANTITY,
+    MAX_ORDER_QUANTITY
+  );
 
   return (
     <div className="font-body-base bg-background text-on-surface min-h-screen">
