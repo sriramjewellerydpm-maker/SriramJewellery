@@ -18,14 +18,21 @@ const formatPhone = (phone) => {
 };
 
 /**
- * Enquiring about a piece — priced or quote-only — two ways, one record:
+ * Enquiring about a piece — priced or quote-only — one button, one record:
  *
- *   Ask on WhatsApp  saves the enquiry (POST /api/quotes, channel "whatsapp")
- *                    with the name and phone on the account, then opens the
- *                    shop's chat with the piece, its link and the SRQ-…
- *                    reference prefilled.
- *   Enquire now      the form (channel "form"), the fallback for anyone who
- *                    would rather not use WhatsApp.
+ *   Enquire on WhatsApp   saves the enquiry (POST /api/quotes, channel
+ *                         "whatsapp") with the name and phone on the account,
+ *                         then opens the shop's chat with the piece, its link
+ *                         and the SRQ-… reference prefilled. This is the only
+ *                         button when a number is configured.
+ *   Enquire now           the form (channel "form"). Shown instead of the
+ *                         above when the shop has no WhatsApp number, and
+ *                         reached from inside the dialog when the customer's
+ *                         profile has no name or mobile, or a WhatsApp open
+ *                         fails.
+ *
+ * The two were side-by-side buttons until they were merged: they read as two
+ * different things when they do the same job, and both end in the same record.
  *
  * The enquiry is always saved first, so it is never lost. Browsers block a
  * window opened after a network call, so the WhatsApp window is opened on the
@@ -166,7 +173,14 @@ const ProductEnquiry = ({ product }) => {
 
   return (
     <>
-      {hasWhatsApp && (
+      {/* ONE way to enquire, not two. These used to sit side by side — "Ask on
+          WhatsApp" above "Enquire Now" — which read as two different things
+          when they do the same job: both save a QuoteRequest the shop can see
+          in admin. Where WhatsApp is configured it IS the enquiry, so it is
+          the only button; the form stays as the fallback for a shop with no
+          number set, and is still reached from inside the dialog when the
+          customer's profile is missing a name or mobile. */}
+      {hasWhatsApp ? (
         <button
           type="button"
           onClick={askOnWhatsApp}
@@ -175,17 +189,18 @@ const ProductEnquiry = ({ product }) => {
           className="w-full disabled:opacity-60 bg-[#1f7a4d] text-white py-5 font-button-text text-button-text tracking-widest hover:bg-[#17633e] active:scale-[0.98] transition-ui flex items-center justify-center gap-3 rounded-sm"
         >
           <WhatsAppIcon className="w-5 h-5" />
-          ASK ON WHATSAPP
+          ENQUIRE ON WHATSAPP
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={openForm}
+          className="w-full bg-transparent border border-sand text-primary py-5 font-button-text text-button-text tracking-widest hover:bg-primary/5 active:scale-[0.98] transition-ui flex items-center justify-center gap-3 rounded-sm"
+        >
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">mail</span>
+          ENQUIRE NOW
         </button>
       )}
-      <button
-        type="button"
-        onClick={openForm}
-        className="w-full bg-transparent border border-sand text-primary py-5 font-button-text text-button-text tracking-widest hover:bg-primary/5 active:scale-[0.98] transition-ui flex items-center justify-center gap-3 rounded-sm"
-      >
-        <span className="material-symbols-outlined text-sm" aria-hidden="true">mail</span>
-        ENQUIRE NOW
-      </button>
 
       {view && (
         <dialog className="modal modal-open" aria-labelledby="enquiry-title" onKeyDown={onKeyDown}>

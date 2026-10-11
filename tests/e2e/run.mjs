@@ -1011,7 +1011,7 @@ const runWhatsAppChatFlow = async (browser, viewport, seeded) => {
 };
 
 /**
- * Enquiries: "Ask on WhatsApp" (priced and quote-only) saves the enquiry
+ * Enquiries: "Enquire on WhatsApp" (priced and quote-only) saves the enquiry
  * first, then opens the chat with the piece, its link and the SRQ reference;
  * a blocked pop-up or a failed save never loses or fakes an enquiry; the form
  * is still there.
@@ -1027,8 +1027,8 @@ const runEnquiryFlow = async (browser, viewport, seeded, shared) => {
   let quoteOnly;
 
   const quotes = async () => (await api("GET", "/quotes", { token: await adminToken() })).body.data;
-  const askButton = () => page.getByRole("button", { name: /ask on whatsapp/i });
-  /** Click "Ask on WhatsApp" and capture the wa.me URL the opened window was sent to. */
+  const askButton = () => page.getByRole("button", { name: /enquire on whatsapp/i });
+  /** Click "Enquire on WhatsApp" and capture the wa.me URL the opened window was sent to. */
   const askAndCapture = async () => {
     // Caught here so a failed step reports, rather than rejecting later.
     const waRequest = context.waitForEvent("request", { predicate: (r) => r.url().startsWith("https://wa.me/"), timeout: 15_000 }).catch((e) => e);
@@ -1130,8 +1130,23 @@ const runEnquiryFlow = async (browser, viewport, seeded, shared) => {
       await page.unroute("**/api/quotes");
       await page.getByRole("button", { name: /close quote request/i }).dispatchEvent("click");
     }],
-    ["The form is still there: prefilled, checks the number, saves a 'form' enquiry", async () => {
-      await page.getByRole("button", { name: /enquire now/i }).click();
+    ["The form is still there: reached from a failed open, prefilled, checks the number, saves a 'form' enquiry", async () => {
+      // The form no longer has a button of its own on the page: where a
+      // WhatsApp number is configured, WhatsApp IS the enquiry and the two
+      // buttons were merged. The form is reached from inside the dialog —
+      // here through "Use the enquiry form instead" after a failed save,
+      // which is the path a real customer takes to it.
+      await page.route("**/api/quotes", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"Failed to submit quote request"}' })
+          : route.continue()
+      );
+      const blocked = context.waitForEvent("page", { timeout: 10_000 }).catch(() => null);
+      await askButton().click();
+      await blocked; // the component closes the blank window itself
+      await page.getByRole("dialog").getByText(/not sent/i).waitFor({ timeout: 10_000 });
+      await page.unroute("**/api/quotes");
+      await page.getByRole("button", { name: /use the enquiry form instead/i }).click();
       // The floating chat button steps aside while the enquiry dialog is open.
       await page.locator("#enquiry-name").waitFor({ timeout: 5_000 });
       expectTrue((await page.locator('[data-testid="whatsapp-chat"]').count()) === 0, "the WhatsApp button is over the enquiry dialog");
@@ -1367,7 +1382,13 @@ const main = async () => {
     const apiEnv = {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
-      NODE_ENV: "development", // auth / OTP / form limiters off, as for local dev
+      NODE_ENV: "development",
+      // The switch the limiters, console-mode email and the demo seed all read
+      // (server/utils/devMode.js). It replaced NODE_ENV for those three, and
+      // without it this run starts against an empty catalogue — "seed products
+      // missing". VERCEL must stay unset: the opt-in is ignored when it is set,
+      // which is what stops any of this reaching a deployment.
+      ALLOW_INSECURE_DEV: "true",
       PORT: String(API_PORT),
       MONGODB_URI: `${mongod.getUri()}e2e`,
       JWT_SECRET: "e2e-jwt-secret-not-for-anything-else",
