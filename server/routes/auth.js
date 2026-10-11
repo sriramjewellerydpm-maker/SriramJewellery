@@ -6,6 +6,7 @@ import { User } from "../models/User.js";
 import { RefreshToken } from "../models/RefreshToken.js";
 import { PasswordResetToken } from "../models/PasswordResetToken.js";
 import { sendMail, sendEmail, renderEmailLayout, emailButton, canDeliverEmail } from "../utils/email.js";
+import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
 import { verifyJWT, JWT_SECRET } from "../middleware/auth.js";
 import { otpLimiter, otpVerifyLimiter, otpRecipientLimiter, authLimiter } from "../middleware/rateLimit.js";
 import { normalizeEmail, canonicalEmailKey } from "../utils/emailIdentity.js";
@@ -32,7 +33,6 @@ router.use((req, res, next) => {
 
 const ACCESS_TOKEN_EXPIRY = "30m";
 const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
-const BCRYPT_SALT_ROUNDS = 12;
 
 // Long enough to find the email and act on it, short enough that a link left in
 // an inbox is not a standing key to the admin dashboard.

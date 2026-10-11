@@ -28,10 +28,10 @@ import dotenv from "dotenv";
 import { User } from "../models/User.js";
 import { RefreshToken } from "../models/RefreshToken.js";
 import { PasswordResetToken } from "../models/PasswordResetToken.js";
+import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
 
 dotenv.config();
 
-const BCRYPT_SALT_ROUNDS = 12;
 
 const arg = (flag) => {
   const i = process.argv.indexOf(flag);

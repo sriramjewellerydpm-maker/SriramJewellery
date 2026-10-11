@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { insecureDevAllowed } from "../utils/devMode.js";
+import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -35,7 +36,7 @@ const seedAdministrator = async () => {
   await User.create({
     name: "Admin",
     email: "admin@buildwithus",
-    passwordHash: await bcrypt.hash(adminPassword, 12),
+    passwordHash: await bcrypt.hash(adminPassword, BCRYPT_SALT_ROUNDS),
     role: "ADMIN",
     photoURL: "/placeholder-user.png",
   });
@@ -49,7 +50,7 @@ const seedAdministrator = async () => {
       await User.create({
         name: "Test User",
         email: "user@test.com",
-        passwordHash: await bcrypt.hash(testPassword, 12),
+        passwordHash: await bcrypt.hash(testPassword, BCRYPT_SALT_ROUNDS),
         role: "USER",
         photoURL: "/placeholder-user.png",
       });

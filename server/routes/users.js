@@ -3,13 +3,13 @@ import bcrypt from "bcrypt";
 import { User } from "../models/User.js";
 import { Order } from "../models/Order.js";
 import { REVENUE_MATCH } from "../utils/revenue.js";
+import { BCRYPT_SALT_ROUNDS } from "../utils/passwords.js";
 import { verifyJWT, requireAdmin } from "../middleware/auth.js";
 import mongoose from "mongoose";
 import { validate, updateProfileSchema, changePasswordSchema, shippingAddressSchema, adminUpdateUserSchema, objectIdParam } from "../middleware/validate.js";
 import { normalizeIndianPhone } from "../utils/phone.js";
 import { profileStatus } from "../utils/profile.js";
 
-const BCRYPT_SALT_ROUNDS = 12;
 
 const router = express.Router();
 
