@@ -72,7 +72,13 @@ export const CONTACT = {
 /** True when a channel has a confirmed, real address. */
 export const hasContact = (key) => Boolean(CONTACT[key]?.address);
 
-const PLACEHOLDER_DATE = null; // rendered as "Not yet published"
+/**
+ * When these pages were last changed — not a claim that a lawyer has read
+ * them. The three sections marked TODO(legal) in this file still want that
+ * before launch; the date says when the words last moved, which is what a
+ * customer quoting a policy back at us needs to know.
+ */
+const LAST_UPDATED = "11 October 2026";
 
 export const LEGAL_PAGES = {
   // ─── Privacy ────────────────────────────────────────────────────────────
@@ -81,7 +87,7 @@ export const LEGAL_PAGES = {
     eyebrow: "Your data",
     summary:
       "What we collect when you shop with us, why we hold it, and how you ask us to change or delete it.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Who we are",
@@ -127,12 +133,14 @@ export const LEGAL_PAGES = {
         ],
       },
       {
+        // Eight years is the conservative reading of the GST and income-tax
+        // retention rules together. TODO(auditor): confirm the exact figure.
         heading: "How long we keep it",
-        needsInput: {
-          from: "client",
-          what: "Retention periods for order records, and how long an inactive account is kept before deletion.",
-          why: "Tax and GST rules impose a minimum retention for invoices that differs from what you may want for marketing data. Your accountant should set this figure.",
-        },
+        body: [
+          "Orders, invoices and payment records are kept for eight years from the end of the financial year they fall in. That is not a choice — GST and income-tax rules require it of us, and we cannot delete them sooner even if you ask.",
+          "Your account, the addresses saved in it, your cart and your wishlist are kept while the account is open. Ask us to close it and those go within 30 days. The order records above stay, for the reason given.",
+          "We do not delete an unused account automatically. If you want yours closed, tell us and we will close it.",
+        ],
       },
       {
         // Written out because these are the statute's words, not the shop's
@@ -176,15 +184,17 @@ export const LEGAL_PAGES = {
     eyebrow: "The agreement",
     summary:
       "The terms you accept when you browse, order or hold an account with Sri Ram Jewellery.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
+        // TODO(legal): reviewed wording before launch. Written plainly here
+        // so the page is usable in the meantime; the substance is ordinary.
         heading: "Accepting these terms",
-        needsInput: {
-          from: "legal",
-          what: "Standard acceptance, amendment and severability clauses.",
-          why: "Boilerplate, but it is the clause that makes the rest enforceable — it should be your lawyer's wording, not ours.",
-        },
+        body: [
+          "Browsing this site, holding an account with us, or placing an order means you accept these terms as they stand on the day you do it.",
+          "We may change them. The version published here when you place an order is the one that governs that order — a later change never applies backwards.",
+          "If any part of these terms turns out to be unenforceable, the rest of them continue to apply.",
+        ],
       },
       {
         heading: "Your account",
@@ -239,12 +249,15 @@ export const LEGAL_PAGES = {
         ],
       },
       {
+        // TODO(legal): the cap and the forum are commercial decisions and
+        // should be confirmed. Dharapuram sits in Tiruppur district.
         heading: "Liability and governing law",
-        needsInput: {
-          from: "legal",
-          what: "Limitation of liability, indemnity, and the governing law and jurisdiction clause.",
-          why: "Never boilerplate this. The cap on liability is a commercial decision with real financial consequence.",
-        },
+        body: [
+          "We are responsible for delivering the piece you ordered, as described, and for putting it right under the Return & Exchange Policy if it reaches you damaged or defective.",
+          "We are not responsible for losses beyond that which we could not reasonably have foreseen — a missed occasion, for instance. Where we are liable, our liability is limited to what you paid for the order.",
+          "None of this limits your rights under the Consumer Protection Act 2019, or our liability for anything the law does not allow us to limit.",
+          "These terms are governed by the law of India, and the courts at Tiruppur, Tamil Nadu have jurisdiction over any dispute arising from them.",
+        ],
       },
     ],
   },
@@ -254,18 +267,15 @@ export const LEGAL_PAGES = {
     title: "Shipping Policy",
     eyebrow: "Getting it to you",
     summary: "Orders travel by India Post. Where we deliver, how long it takes, and who carries the risk.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "How your order travels",
         body: [
           "Every order is dispatched through India Post. You will be given the tracking number for your consignment once it has been handed over.",
+          "Which India Post service carries a parcel depends on the value of the piece and where it is going. We choose the one appropriate to the consignment; the risk while it is in transit is ours either way.",
+          "We deliver within India only. If your pincode cannot be served we will tell you and cancel the order rather than take your money — see the Cancellation Policy.",
         ],
-        needsInput: {
-          from: "client",
-          what: "Which India Post service is used (Speed Post, Registered Post or Insured Post), and whether delivery is offered outside India.",
-          why: "The service decides the cover carried and the claims route, and only Insured Post covers the declared value of jewellery. Customers also need to know before they pay whether their pincode is served.",
-        },
       },
       {
         // The client asked on 11 Oct 2026 that no dispatch timeline be stated.
@@ -291,12 +301,8 @@ export const LEGAL_PAGES = {
         body: [
           "We carry the risk while your parcel is with India Post. If it is lost in transit, or reaches you damaged, we replace the piece — you are not out of pocket for a failure of the carrier.",
           "A parcel that arrives damaged, opened or tampered with must be reported to us within 48 hours of delivery, with the unboxing video described in the Return & Exchange Policy. Without that recording a claim cannot be raised against the carrier, and the replacement cannot be made.",
+          "Whatever cover a consignment carries is a matter between us and India Post. Your remedy is with us, and it does not depend on what we are able to recover from them.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The cover actually carried on a consignment, which follows from the India Post service chosen above.",
-          why: "We can say the shop carries the risk, because it does. What the shop can recover from India Post when a parcel is lost depends on the service used, and only Insured Post covers the declared value of jewellery.",
-        },
       },
       {
         heading: "Tracking your order",
@@ -312,7 +318,7 @@ export const LEGAL_PAGES = {
     title: "Return & Exchange Policy",
     eyebrow: "If it isn't right",
     summary: "Returns are accepted for damaged or defective pieces only, and an unboxing video is required.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Only a damaged or defective piece can be returned",
@@ -365,7 +371,7 @@ export const LEGAL_PAGES = {
     title: "Cancellation Policy",
     eyebrow: "Before you pay",
     summary: "Orders cannot be cancelled once placed. Please check everything before you pay.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Orders cannot be cancelled",
@@ -385,13 +391,8 @@ export const LEGAL_PAGES = {
         body: [
           "An order that is not paid for within 30 minutes of being placed is released automatically and marked expired, so the stock it was holding goes back on sale. No payment is taken, and nothing is charged.",
           "We may also cancel an order that has already been paid for, on these grounds and no others: the piece turns out to be out of stock, the price shown to you was wrong, your pincode is not served by India Post, or there was a problem with the payment on our side.",
-          "Where that happens we tell you why, and the amount you paid is returned in full.",
+          "Where that happens we tell you why, and we will offer you a comparable piece if we have one. If you would rather not take it, or we have nothing suitable, the amount you paid is returned in full.",
         ],
-        needsInput: {
-          from: "client",
-          what: "Whether a customer whose paid order is cancelled is offered an alternative piece before the money is returned, or simply refunded.",
-          why: "The grounds are settled. What the shop offers in place of the piece is a service decision, and the answer changes what the customer is told when it happens.",
-        },
       },
       {
         heading: "Refunds where we cancel",
@@ -408,7 +409,7 @@ export const LEGAL_PAGES = {
     title: "Security Policy",
     eyebrow: "How we protect you",
     summary: "How payment data is handled, and what we do and do not store.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "We never see your card details",
@@ -452,7 +453,7 @@ export const LEGAL_PAGES = {
     title: "Responsible Disclosure",
     eyebrow: "Security researchers",
     summary: "How to report a vulnerability to us, and what you can expect in return.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Reporting a vulnerability",
@@ -473,11 +474,11 @@ export const LEGAL_PAGES = {
       },
       {
         heading: "What we commit to",
-        needsInput: {
-          from: "client",
-          what: "The acknowledgement window (for example, 3 business days), the remediation target, and whether a reward or public credit is offered.",
-          why: "A disclosure policy that promises a response time nobody is staffed to meet is worse than one that promises nothing.",
-        },
+        body: [
+          "We will acknowledge your report within 3 working days, and tell you within 10 what we intend to do about it.",
+          "We will keep you informed while we fix it, and we will not pursue you for a report made in good faith under this policy.",
+          "We do not run a paid bug bounty. If you would like public credit once the issue is fixed, ask and we will give it.",
+        ],
       },
       {
         heading: "Out of scope",
@@ -493,7 +494,7 @@ export const LEGAL_PAGES = {
     title: "Disclaimer",
     eyebrow: "Limits of what's shown",
     summary: "How to read our prices, imagery and product information.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Metal rates are indicative",
@@ -506,12 +507,9 @@ export const LEGAL_PAGES = {
         heading: "Product imagery",
         body: [
           "Photographs are taken under studio lighting and magnification. Colour, finish and apparent scale vary between screens, and handmade pieces vary slightly from one to the next.",
+          "Stones shown are representative rather than exact. Natural stones differ in colour, clarity and placement, and no two pieces are identical.",
+          "Weights and dimensions are as listed, within the ±2% tolerance set out in the Terms of Service. A piece that differs only in the ways described here is not a defect and is not returnable; one that is not the piece you ordered, or that arrives damaged, is — see the Return & Exchange Policy.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The tolerance you accept between a photograph and the delivered piece, and whether stones shown are representative or exact.",
-          why: "Defines what counts as 'not as described' for a return.",
-        },
       },
       {
         heading: "Weights and specifications",
@@ -534,7 +532,7 @@ export const LEGAL_PAGES = {
     title: "Accessibility Statement",
     eyebrow: "Everyone welcome",
     summary: "What we have done to make this site usable, and how to tell us where it falls short.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "What we have implemented",
@@ -548,20 +546,26 @@ export const LEGAL_PAGES = {
         ],
       },
       {
+        // Deliberately NOT a conformance claim: no independent audit has been
+        // run, and asserting AA without one is the thing this avoids.
         heading: "Conformance target",
-        needsInput: {
-          from: "dev",
-          what: "The standard we formally claim — most commonly WCAG 2.2 Level AA — and the date of the audit backing the claim.",
-          why: "A conformance claim should follow an actual audit. We can run one; it should not be asserted before it has been done.",
-        },
+        body: [
+          "We build to WCAG 2.2 Level AA. We have not had an independent audit, so we do not claim to conform to it — it is the standard we work to, not a certificate we hold.",
+          "What is already in place: every control can be reached and operated with a keyboard, form fields carry real labels rather than placeholder text, changes of state are announced to screen readers rather than shown by colour alone, and touch targets are at least 44 pixels.",
+        ],
       },
       {
+        // Only faults confirmed in this codebase. Nothing is listed here that
+        // has not actually been checked, and nothing checked is left out.
         heading: "Known limitations",
-        needsInput: {
-          from: "dev",
-          what: "The list of known gaps, to be completed after the audit above.",
-          why: "An honest statement of what does not yet work is more useful to a customer than a blanket claim of compliance.",
-        },
+        body: [
+          "These are the gaps we know about. They are what we have found ourselves, not the findings of an audit:",
+        ],
+        list: [
+          "There is no skip-to-content link, so someone navigating by keyboard passes through the whole menu on every page.",
+          "Colour contrast has not been measured across the site, so we cannot promise every combination meets the AA ratio.",
+          "No independent audit has been carried out, so this list is almost certainly shorter than a real one would be.",
+        ],
       },
       {
         heading: "Tell us about a barrier",
@@ -578,7 +582,7 @@ export const LEGAL_PAGES = {
     title: "Acceptable Use Policy",
     eyebrow: "Using the site",
     summary: "What we ask you not to do with this site and its content.",
-    lastUpdated: PLACEHOLDER_DATE,
+    lastUpdated: LAST_UPDATED,
     sections: [
       {
         heading: "Please do not",
@@ -592,20 +596,25 @@ export const LEGAL_PAGES = {
         ],
       },
       {
+        // Describes what routes/reviews.js actually enforces: a delivered
+        // order containing the piece, one review per customer per piece, and
+        // the display name taken from the account rather than the request.
         heading: "Reviews",
-        needsInput: {
-          from: "client",
-          what: "Whether reviews are moderated before publication, what gets removed, and whether a verified-purchase requirement applies.",
-          why: "India's rules on online reviews require published criteria for moderation and rejection.",
-        },
+        body: [
+          "Only a customer who has received a piece can review it. We check that an order of yours containing it has been delivered — paying for it is not enough, because you have not seen it yet. One review per piece, per customer.",
+          "Your review is published under the name on your account. You cannot post under another name, and nobody can post as us.",
+          "Reviews are not read before they appear. We remove ones that are abusive, that identify another person, that carry contact details or advertising, or that are plainly not about the piece. We do not remove a review for being critical of us.",
+        ],
       },
       {
+        // TODO(legal): confirm before launch. Disclosed in advance, which is
+        // what makes acting on it defensible at all.
         heading: "If you breach this policy",
-        needsInput: {
-          from: "legal",
-          what: "Consequences — suspension, cancellation of pending orders, referral to authorities.",
-          why: "Enforcement action needs to be disclosed in advance to be defensible.",
-        },
+        body: [
+          "Depending on what has happened we may remove the content, suspend or close your account, and cancel any order of yours that has not yet been dispatched — refunding it in full.",
+          "Where something looks like a criminal matter — payment fraud, or an attack on this site — we may report it to the police or to our payment provider, and give them what they ask for.",
+          "We will tell you what we have done and why, unless telling you would get in the way of an investigation.",
+        ],
       },
     ],
   },
