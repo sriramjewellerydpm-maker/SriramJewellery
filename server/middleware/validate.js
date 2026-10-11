@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { RATE_BOUNDS, rateOutOfBoundsMessage } from "../utils/rateGuards.js";
+import { MAX_PRODUCT_IMAGES } from "../../shared/productImages.js";
+
+export { MAX_PRODUCT_IMAGES };
 
 /**
  * Express middleware factory: validate request body against a Zod schema.
@@ -123,6 +126,14 @@ export const createProductSchema = z.object({
   stock: z.coerce.number().int("Stock must be a whole number").min(0, "Stock cannot be negative").nullish(),
   carate: optionalNumber,
   isQuoteOnly: booleanish.nullish(),
+  // The gallery. `img` stays the primary and is what every older reader uses
+  // (cards, order line snapshots, the owner's WhatsApp alert), so the form
+  // keeps it in step with images[0] rather than replacing it.
+  //
+  // Spelled out rather than left to .passthrough(): the schema is what stops
+  // an admin request putting five hundred URLs on a document, and an explicit
+  // field is the difference between a bounded list and whatever was posted.
+  images: z.array(z.string().max(1000)).max(MAX_PRODUCT_IMAGES, `No more than ${MAX_PRODUCT_IMAGES} images`).optional(),
 }).passthrough();
 
 // PATCH may touch any subset of fields, so nothing is required — but whatever

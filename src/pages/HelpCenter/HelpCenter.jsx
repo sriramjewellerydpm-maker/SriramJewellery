@@ -78,7 +78,7 @@ const HelpCenter = () => {
     <main className="w-full bg-surface text-on-surface min-h-screen">
       <CustomHelmet title="Help Centre" />
 
-      <div className="max-w-[860px] mx-auto px-margin-mobile md:px-margin-desktop py-16 md:py-24">
+      <div className="max-w-[860px] mx-auto px-margin-mobile md:px-margin-desktop pt-32 pb-16 md:pb-24">
         <header className="mb-14 text-center">
           <p className="font-label-caps text-label-caps uppercase tracking-[0.2em] text-primary mb-4">
             Here to help

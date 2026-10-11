@@ -54,3 +54,7 @@ BACKEND_STRATEGY.md
 # test output
 coverage/
 tests/e2e/artifacts/
+.claude
+.github
+.vscode
+

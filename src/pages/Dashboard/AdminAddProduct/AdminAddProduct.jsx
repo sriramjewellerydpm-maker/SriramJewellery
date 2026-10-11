@@ -14,6 +14,7 @@ import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import useCategories from "../../../hooks/useCategories";
 import { optimizeCloudinaryUrl } from "../../../utils/cloudinaryImage";
 import { uploadToCloudinary, MAX_IMAGE_BYTES } from "../../../utils/uploadToCloudinary";
+import { MAX_PRODUCT_IMAGES } from "../../../../shared/productImages.js";
 import { getErrorMessage } from "../../../utils/errorMessage";
 
 const AdminAddProduct = () => {
@@ -29,6 +30,8 @@ const AdminAddProduct = () => {
   const { id: paramId } = useParams();
   const productId = paramId || location.state?.id;
   const [dynamicProduct, setDynamicProduct] = useState(null);
+  // Which file is going up, so a multi-image save is not a silent pause.
+  const [uploadingImage, setUploadingImage] = useState(null);
   const [products] = useProducts();
 
   useEffect(() => {
@@ -49,6 +52,9 @@ const AdminAddProduct = () => {
   } = useForm();
 
   const isQuoteOnlyValue = watch("isQuoteOnly", false);
+  // The files currently chosen, so the form can show which ones and in what
+  // order before anything is uploaded.
+  const pickedImages = Array.from(watch("productImg") || []);
   // Watched so the price preview recalculates as the owner types.
   const weightValue = watch("weight");
   const wastageValue = watch("wastagePercent");
@@ -138,11 +144,22 @@ const AdminAddProduct = () => {
       addedAt: new Date(),
     };
 
-    const imgFile = data.productImg?.[0];
-    if (imgFile?.size > MAX_IMAGE_BYTES) {
+    const imgFiles = Array.from(data.productImg || []);
+    const tooBig = imgFiles.find((f) => f.size > MAX_IMAGE_BYTES);
+    if (tooBig) {
       Swal.fire({
         title: "Image Size Exceeded!",
-        text: "Your product image size is more than 2MB.",
+        // Named, because with several files selected "an image is too big" is
+        // not something the shop owner can act on.
+        text: `"${tooBig.name}" is larger than 2MB. Please replace it and try again.`,
+        icon: "error",
+      });
+      return;
+    }
+    if (imgFiles.length > MAX_PRODUCT_IMAGES) {
+      Swal.fire({
+        title: "Too many images",
+        text: `A piece can carry up to ${MAX_PRODUCT_IMAGES} images. You selected ${imgFiles.length}.`,
         icon: "error",
       });
       return;
@@ -159,9 +176,19 @@ const AdminAddProduct = () => {
     });
     if (!isConfirmed) return;
 
-    if (imgFile) {
+    if (imgFiles.length) {
       try {
-        product.img = await uploadToCloudinary(imgFile, axiosSecure);
+        // Sequentially, not Promise.all: each upload is a signed request of
+        // its own, and when one fails this says WHICH one rather than failing
+        // the batch anonymously.
+        const uploaded = [];
+        for (const file of imgFiles) {
+          setUploadingImage(file.name);
+          uploaded.push(await uploadToCloudinary(file, axiosSecure));
+        }
+        product.images = uploaded;
+        // img stays the primary everywhere else reads from.
+        product.img = uploaded[0];
       } catch (uploadError) {
         console.error(uploadError);
         // The real reason, not just "it failed". A missing CLOUDINARY_URL
@@ -172,7 +199,13 @@ const AdminAddProduct = () => {
         return;
       }
     } else {
+      // Editing without choosing new files keeps whatever the piece already
+      // has. Without carrying `images` too, saving any other field would
+      // silently drop the gallery and leave only the primary.
       product.img = dynamicProduct.img;
+      product.images = dynamicProduct.images?.length
+        ? dynamicProduct.images
+        : [dynamicProduct.img].filter(Boolean);
     }
 
     const res = dynamicProduct
@@ -478,13 +511,24 @@ const AdminAddProduct = () => {
                 <div>
                   {dynamicProduct?.img ? (
                     <figure>
-                      <img
-                        src={optimizeCloudinaryUrl(dynamicProduct?.img, { width: 300 })}
-                        alt=""
-                        className="block mx-auto mb-2 w-[50%] bg-surface-container p-3 rounded-lg"
-                      />
+                      <div className="flex flex-wrap justify-center gap-2 mb-2">
+                        {(dynamicProduct.images?.length
+                          ? dynamicProduct.images
+                          : [dynamicProduct.img].filter(Boolean)
+                        ).map((src, i) => (
+                          <img
+                            key={src + i}
+                            src={optimizeCloudinaryUrl(src, { width: 200 })}
+                            alt=""
+                            className="w-24 h-24 object-cover bg-surface-container p-1 rounded-lg"
+                          />
+                        ))}
+                      </div>
                       <figcaption className="text-center text-sm">
-                        Current Image
+                        {/* Said explicitly: choosing new files REPLACES the set
+                            rather than adding to it, which is not obvious from
+                            a file input and is not undoable. */}
+                        Current images — choosing new files replaces all of them
                       </figcaption>
                     </figure>
                   ) : (
@@ -502,17 +546,51 @@ const AdminAddProduct = () => {
 
                   <input
                     type="file"
+                    multiple
                     className="w-full max-w-xs mt-4 mx-auto block text-sm text-on-surface-variant file:mr-4 file:py-2.5 file:px-4 file:rounded-sm file:border-0 file:font-label-caps file:text-[11px] file:uppercase file:tracking-[0.1em] file:bg-surface-container file:text-on-surface hover:file:bg-primary hover:file:text-white file:cursor-pointer file:transition-colors"
                     accept=".jpg, .jpeg, .png"
                     name="productImg"
                     {...register("productImg", {
                       required: !dynamicProduct && true,
+                      validate: (files) =>
+                        (files?.length || 0) <= MAX_PRODUCT_IMAGES ||
+                        `Choose up to ${MAX_PRODUCT_IMAGES} images`,
                     })}
                   />
 
+                  <p className="text-center text-xs text-on-surface-variant mt-2">
+                    Choose up to {MAX_PRODUCT_IMAGES}. The first is the one shown on
+                    listings; the rest appear in the gallery on the product page.
+                  </p>
+
+                  {/* What is about to be uploaded, named — a count alone does
+                      not tell the shop owner they picked the wrong file. */}
+                  {pickedImages.length > 0 && (
+                    <ul className="mt-3 text-xs text-on-surface-variant max-w-xs mx-auto space-y-1">
+                      {pickedImages.map((f, i) => (
+                        <li key={f.name + i} className="flex justify-between gap-3">
+                          <span className="truncate">
+                            {i === 0 ? "1. " : `${i + 1}. `}
+                            {f.name}
+                            {i === 0 && <span className="text-primary"> (primary)</span>}
+                          </span>
+                          <span className={f.size > MAX_IMAGE_BYTES ? "text-error flex-none" : "flex-none"}>
+                            {(f.size / 1024 / 1024).toFixed(1)}MB
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {uploadingImage && (
+                    <p className="text-center text-xs text-primary mt-2" aria-live="polite">
+                      Uploading {uploadingImage}…
+                    </p>
+                  )}
+
                   {errors.productImg && (
                     <span className="text-error mt-1 text-center block">
-                      Product image is required
+                      {errors.productImg.message || "Product image is required"}
                     </span>
                   )}
                 </div>
