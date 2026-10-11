@@ -40,23 +40,28 @@
  */
 export const CONTACT = {
   support: {
-    address: null,
+    address: "sriramjewellerydpm@gmail.com",
     purpose: "Customer support — orders, returns, payment problems",
   },
   privacy: {
-    address: null,
+    address: "sriramjewellerydpm@gmail.com",
     purpose: "Data protection requests (access, correction, deletion)",
   },
   security: {
-    address: null,
+    address: "sriramjewellerydpm@gmail.com",
     purpose: "Security and vulnerability reports",
   },
   grievance: {
-    address: null,
+    // The same mailbox, because it is the one the shop actually reads. The
+    // officer's NAME is published in the Privacy Policy; the response window
+    // the shop commits to is still outstanding.
+    address: "sriramjewellerydpm@gmail.com",
     purpose: "Grievance Officer — required to be published by Indian e-commerce rules",
   },
   phone: {
-    address: null,
+    // The number the client confirmed for customer contact, and the one the
+    // WhatsApp button uses. Staffed hours have not been given.
+    address: "+91 93637 50806",
     purpose: "Published support telephone number and staffed hours",
   },
 };
@@ -77,11 +82,11 @@ export const LEGAL_PAGES = {
     sections: [
       {
         heading: "Who we are",
-        needsInput: {
-          from: "client",
-          what: "Registered business name, registered office address, CIN/registration number, and the name of the person accountable for data requests.",
-          why: "Indian consumer rules require a customer to be able to identify and reach the entity holding their data. This cannot be approximated.",
-        },
+        body: [
+          "This site is operated by SRI RAM JEWELLERY, a sole proprietorship of Radhakrishnan, trading from 280/212, Sriram Jewellery, Vasantha Road, Dharapuram 638656, Tamil Nadu, India.",
+          "Our GSTIN is 33AJSPR7785A1ZQ. A proprietorship has no company registration number; the GSTIN is our registration of record.",
+          "Radhakrishnan, the proprietor, is accountable for data protection requests and acts as our Grievance Officer. Use the address at the end of this policy to reach him.",
+        ],
       },
       {
         heading: "What we collect",
@@ -115,12 +120,8 @@ export const LEGAL_PAGES = {
         heading: "Who else sees your data",
         body: [
           "Razorpay, to take payment. Cloudinary, which stores product imagery only and receives no customer data. Our hosting and database providers, which hold the data at rest on our behalf.",
+          "India Post, which receives your name, delivery address and phone number so that it can deliver your parcel. It is the only courier we use.",
         ],
-        needsInput: {
-          from: "client",
-          what: "Confirm the courier/logistics partners who receive customer names, addresses and phone numbers for delivery.",
-          why: "Anyone who receives customer data has to be disclosed by category, and delivery partners always do.",
-        },
       },
       {
         heading: "How long we keep it",
@@ -146,8 +147,8 @@ export const LEGAL_PAGES = {
         contact: "privacy",
         needsInput: {
           from: "client",
-          what: "Name and contact details of the Grievance Officer, and the response window you commit to.",
-          why: "Indian e-commerce rules require a named grievance officer to be published.",
+          what: "The response window the shop commits to for a grievance — Indian e-commerce rules expect acknowledgement within 48 hours and resolution within one month.",
+          why: "The officer and the address are now published above. The committed response time is the remaining piece, and it is a promise the shop has to be able to keep.",
         },
       },
     ],
@@ -194,19 +195,26 @@ export const LEGAL_PAGES = {
       },
       {
         heading: "Orders and acceptance",
-        needsInput: {
-          from: "client",
-          what: "At what point a contract is formed — on payment, on dispatch, or on your confirmation — and the grounds on which you may decline an order (stock, pricing error, delivery area).",
-          why: "This determines whether you are obliged to honour an order placed at a mispriced figure, which matters a great deal when prices track a live metal rate.",
-        },
+        body: [
+          "Paying for an order does not by itself conclude a contract with us. Every paid order is reviewed by us first, and the contract is formed when we approve it. Your 15-day delivery window runs from that approval, not from payment.",
+          "Until we approve it, we may decline an order — because the piece is out of stock, because the price shown was wrong, because your pincode is not served by India Post, or because of a problem with the payment on our side. Where we decline an order that has been paid for, the full amount is returned to you; the Cancellation Policy sets out how and when.",
+        ],
       },
+      // TODO(client/auditor): hallmarking is deliberately absent. The client
+      // instructed on 11 Oct 2026 that the site say nothing about it. BIS
+      // hallmarking is mandatory for gold jewellery sold in notified districts
+      // and silence on the website does not change whether the obligation
+      // applies to the shop — it only removes the claim from the page. This
+      // needs the shop's auditor to confirm before launch. It is NOT written
+      // as a needsInput block, because those render publicly and a visible
+      // "needs client confirmation" note about hallmarking would breach the
+      // same instruction it was recording.
       {
-        heading: "Hallmarking and product accuracy",
-        needsInput: {
-          from: "client",
-          what: "BIS hallmarking commitments, purity guarantees, and the tolerance you accept between the stated and actual weight of a piece.",
-          why: "Hallmarking is legally mandated for gold jewellery in India and customers rely on the specific claim you make.",
-        },
+        heading: "Product accuracy and weight",
+        body: [
+          "Jewellery is finished by hand and cannot be made to an exact weight. The gross and net weights shown for a piece are accurate to within ±2%, and the piece you receive may differ from its stated weight by up to that margin either way.",
+          "Where a piece is priced from its weight, the price you pay is calculated from the weight stated on the listing. We do not re-price it against the weight of the finished piece.",
+        ],
       },
       {
         heading: "Intellectual property",
@@ -244,33 +252,37 @@ export const LEGAL_PAGES = {
         },
       },
       {
-        heading: "Dispatch and delivery times",
-        needsInput: {
-          from: "client",
-          what: "Dispatch window for in-stock pieces, lead time for made-to-order pieces, and the delivery estimate by region once India Post has the parcel.",
-          why: "Committed delivery timelines are enforceable promises — these must come from whoever runs fulfilment, and India Post's transit times vary widely by destination.",
-        },
+        // The client asked on 11 Oct 2026 that no dispatch timeline be stated.
+        // The 15-day window is therefore written as one end-to-end commitment
+        // covering both preparation and transit, rather than as two figures.
+        heading: "Delivery time",
+        body: [
+          "Your order reaches you within 15 days of our approving it. Approval happens after payment — the Terms of Service explain why — and the expected delivery date appears against your order under My Orders as soon as it is approved.",
+          "That 15 days covers preparing the piece and its journey with India Post together. We do not quote a separate dispatch date.",
+        ],
       },
       {
         heading: "Shipping charges",
         body: [
-          "The site currently advertises free insured shipping on orders above ₹50,000.",
+          "Jewellery orders above ₹5,000 are delivered free.",
+          "Coins are charged for delivery whatever the order comes to. Free delivery above ₹5,000 applies to jewellery only.",
         ],
         needsInput: {
           from: "client",
-          what: "Confirm that threshold is correct and current, and state the charge applied below it.",
-          why: "This figure is already shown to customers in the site header, so the policy and the banner must agree.",
+          what: "The delivery charge on a jewellery order of ₹5,000 or less, the charge on coins, and how an order containing both jewellery and coins is charged.",
+          why: "The threshold is confirmed but no figure has been given for anything below it, and the site cannot take money for delivery at a rate it has not published. Checkout cannot charge for shipping until these three numbers exist.",
         },
       },
       {
-        heading: "Insurance and transit risk",
+        heading: "Transit risk",
         body: [
-          "A parcel that arrives damaged, opened or tampered with must be reported to us with the unboxing video described in the Return & Exchange Policy. Without that recording a claim cannot be raised against the carrier.",
+          "We carry the risk while your parcel is with India Post. If it is lost in transit, or reaches you damaged, we replace the piece — you are not out of pocket for a failure of the carrier.",
+          "A parcel that arrives damaged, opened or tampered with must be reported to us within 48 hours of delivery, with the unboxing video described in the Return & Exchange Policy. Without that recording a claim cannot be raised against the carrier, and the replacement cannot be made.",
         ],
         needsInput: {
           from: "client",
-          what: "Who bears the risk while the parcel is with India Post, the cover actually carried on a consignment, and the deadline for reporting a damaged or missing parcel.",
-          why: "For high-value jewellery this is the single most disputed clause, and the claims procedure has to match what India Post and your insurer require.",
+          what: "The cover actually carried on a consignment, which follows from the India Post service chosen above.",
+          why: "We can say the shop carries the risk, because it does. What the shop can recover from India Post when a parcel is lost depends on the service used, and only Insured Post covers the declared value of jewellery.",
         },
       },
       {
@@ -294,12 +306,8 @@ export const LEGAL_PAGES = {
         body: [
           "A piece can be returned only if it reaches you damaged or defective. We do not accept returns or exchanges for a change of mind, for fit, or because a piece looks different in person from its photographs.",
           "Pieces bought against a live metal rate, made-to-order and customised work are covered on the same basis: a manufacturing fault or transit damage, and nothing else.",
+          "A fault must be reported to us within 48 hours of delivery. After that we cannot tell a manufacturing fault from ordinary wear, and no claim can be raised with India Post or our insurer.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The number of days from delivery within which a defect must be reported.",
-          why: "Without a stated deadline the window is open indefinitely, and a claim months after delivery cannot be told apart from ordinary wear.",
-        },
       },
       {
         heading: "An unboxing video is required",
@@ -311,32 +319,28 @@ export const LEGAL_PAGES = {
       {
         heading: "How to raise a return",
         body: [
-          "Contact us with your order number and the unboxing video. Returns are handled by our team; there is no self-serve returns option on the site.",
+          "Message us on WhatsApp at +91 93637 50806, or write to sriramjewellerydpm@gmail.com, within 48 hours of delivery. Send your order number and the unboxing video. Returns are handled by our team; there is no self-serve returns option on the site.",
+          "We arrange the return shipment and we pay for it. Please do not send a piece back before we have confirmed the return with you, or we cannot track it.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The channel a customer should use (email, phone or WhatsApp), who arranges the return shipment, and who pays for it.",
-          why: "The site has no returns flow, so the stated process has to match what your team can really operate.",
-        },
       },
       {
-        heading: "How refunds are calculated",
-        needsInput: {
-          from: "client",
-          what: "For an accepted defective return: whether the refund is at the original purchase price or the prevailing metal rate on the return date, which charges (making, wastage, GST, shipping) are refundable, and whether a replacement is offered instead of a refund.",
-          why: "With rate-linked pricing this is genuinely ambiguous and is the most common source of dispute. It needs an explicit answer even when returns are limited to faults.",
-        },
-      },
-      {
-        heading: "Refund timelines",
+        heading: "We replace a faulty piece, we do not refund it",
         body: [
-          "Refunds are issued to the original payment method through Razorpay.",
+          "An accepted damaged or defective piece is replaced. We do not refund the purchase price for a fault, so no question arises of re-pricing the piece against the metal rate on the day it comes back.",
+          "You are not charged again for the replacement, and you pay neither the return nor the re-delivery cost.",
         ],
         needsInput: {
           from: "client",
-          what: "The number of business days from approval to refund initiation.",
-          why: "Razorpay's settlement time is outside your control, but the approval window is yours to commit to.",
+          what: "What happens when the piece cannot be replaced — a one-off design, or that piece no longer in stock.",
+          why: "Replacement-only has no answer for the case that will certainly occur sooner or later. As the policy stands, a customer holding a faulty piece we cannot replace is left with no stated remedy at all, and that is the gap a consumer forum would look at first.",
         },
+      },
+      {
+        heading: "When a refund does happen",
+        body: [
+          "A fault is put right by replacement, as above, so a return does not produce a refund. Money comes back to you only where we cancel an order ourselves — the Cancellation Policy sets out the grounds and the timing.",
+          "Any refund we do make goes to the original payment method through Razorpay. We cannot send it anywhere else.",
+        ],
       },
     ],
   },
@@ -365,23 +369,21 @@ export const LEGAL_PAGES = {
         heading: "Cancellation by us",
         body: [
           "An order that is not paid for within 30 minutes of being placed is released automatically and marked expired, so the stock it was holding goes back on sale. No payment is taken, and nothing is charged.",
+          "We may also cancel an order that has already been paid for, on these grounds and no others: the piece turns out to be out of stock, the price shown to you was wrong, your pincode is not served by India Post, or there was a problem with the payment on our side.",
+          "Where that happens we tell you why, and the amount you paid is returned in full.",
         ],
         needsInput: {
           from: "client",
-          what: "The other grounds on which you may cancel a PAID order — stock unavailability, failed verification, an obvious pricing error, an unserviceable pincode — and whether the customer is offered an alternative piece or a refund.",
-          why: "Now that the customer cannot cancel, this is the only cancellation route left, so it is the clause disputes will turn on. A live metal rate makes a mispriced order a real possibility.",
+          what: "Whether a customer whose paid order is cancelled is offered an alternative piece before the money is returned, or simply refunded.",
+          why: "The grounds are settled. What the shop offers in place of the piece is a service decision, and the answer changes what the customer is told when it happens.",
         },
       },
       {
         heading: "Refunds where we cancel",
         body: [
-          "Where we cancel an order that has already been paid for, the payment is returned in full to the original payment method through Razorpay.",
+          "Where we cancel an order that has already been paid for, the payment is returned in full to the original payment method through Razorpay. We cannot send it anywhere else.",
+          "We start the refund within 2 banking days of cancelling your order. How long it then takes to appear in your account is set by Razorpay and by your own bank, and is usually a further 5 to 7 working days. We will tell you the date we initiated it.",
         ],
-        needsInput: {
-          from: "client",
-          what: "The number of business days from our cancellation to the refund being initiated.",
-          why: "Must be consistent with the Return & Exchange Policy.",
-        },
       },
     ],
   },
@@ -498,11 +500,10 @@ export const LEGAL_PAGES = {
       },
       {
         heading: "Weights and specifications",
-        needsInput: {
-          from: "client",
-          what: "The tolerance on stated gross and net weights.",
-          why: "Since price is computed from weight, the stated tolerance directly affects what a customer pays.",
-        },
+        body: [
+          "Stated gross and net weights are accurate to within ±2%. A handmade piece cannot be produced to an exact weight, and the piece you receive may be up to 2% lighter or heavier than its listing says.",
+          "The price you pay is worked out from the weight shown on the listing, not from the weight of the finished piece. The Terms of Service say the same thing, and the two are meant to agree.",
+        ],
       },
       {
         heading: "External links",

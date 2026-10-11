@@ -64,7 +64,7 @@ const ProductDescription = () => {
           </h4>
           <div className="space-y-6 font-body-base text-on-surface-variant leading-relaxed">
             <p>
-              We offer Free Standard Shipping for all orders over ₹5,000 across India. The minimum order value must be ₹5,000 before taxes, shipping and handling.
+              Jewellery orders above ₹5,000 are delivered free across India, counted before taxes and delivery. Coins are charged for delivery whatever the order comes to.
             </p>
             <p className="italic">
               Please allow up to 2 business days (excluding weekends, holidays, and sale days) to process your order.

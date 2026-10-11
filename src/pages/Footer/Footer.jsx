@@ -40,14 +40,21 @@ const Footer = () => {
               <h4 className="font-display-lg text-[22px] text-primary">Sri Ram Jewellery</h4>
             </div>
             <p className="font-body-base text-on-surface-variant leading-relaxed max-w-sm italic">
-              Timeless Craftsmanship. Celebrating your milestones with the purest gold and finest diamonds since 1984.
+              Timeless Craftsmanship. Celebrating your milestones with the purest gold and finest diamonds since 1999.
             </p>
+            {/* Both icons used to be href="#". The second is Instagram, which
+                the shop has; the first had no destination at all and has been
+                removed rather than shipped as a link that goes nowhere. Add it
+                back when there is a page to point it at. */}
             <div className="flex gap-5">
-              <a className="w-10 h-10 rounded-full border border-primary/20 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-ui" href="#">
-                <span className="material-symbols-outlined text-[20px]">public</span>
-              </a>
-              <a className="w-10 h-10 rounded-full border border-primary/20 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-ui" href="#">
-                <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+              <a
+                className="w-10 h-10 rounded-full border border-primary/20 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-ui"
+                href="https://www.instagram.com/sri_ram_jewellery"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Sri Ram Jewellery on Instagram"
+              >
+                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">photo_camera</span>
               </a>
             </div>
           </div>

@@ -16,7 +16,7 @@ const Hero = () => {
       {/* Content Overlay */}
       <div className="relative z-10 text-center px-margin-mobile md:px-margin-desktop fade-in-up">
         <div className="mb-8 tracking-[0.4em] text-white/90">
-          <span className="font-label-caps text-label-caps block mb-2">SINCE 1924</span>
+          <span className="font-label-caps text-label-caps block mb-2">SINCE 1999</span>
           <div className="w-16 h-[1px] bg-white/50 mx-auto"></div>
         </div>
         <h1 className="font-display-lg text-display-lg-mobile md:text-display-lg text-white mb-6 leading-tight max-w-4xl mx-auto italic">

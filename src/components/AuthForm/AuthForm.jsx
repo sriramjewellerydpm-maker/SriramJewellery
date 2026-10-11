@@ -92,7 +92,7 @@ const AuthForm = ({ helmetTitle, heroEyebrow, heroHeadline, initialMode = "signi
             <p className="font-label-caps text-[9px] uppercase tracking-widest text-center leading-relaxed">
               Secure sign-in by Sri Ram Jewellery
               <br />
-              Protecting your personal collection since 1984
+              Protecting your personal collection since 1999
             </p>
           </div>
         </div>
