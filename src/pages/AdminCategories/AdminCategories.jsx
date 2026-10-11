@@ -8,6 +8,9 @@ import { Link } from "react-router-dom";
 import useAxiosSecure from "../../hooks/useAxiosSecure";
 import { uploadToCloudinary, MAX_IMAGE_BYTES } from "../../utils/uploadToCloudinary";
 import { getErrorMessage } from "../../utils/errorMessage";
+import useAdminMutation from "../../hooks/useAdminMutation";
+import MutationStatus from "../../components/MutationStatus/MutationStatus";
+import { certainFailure } from "../../utils/mutationError";
 import AnimateText from "@moxy/react-animate-text";
 
 const AdminCategories = () => {
@@ -17,12 +20,10 @@ const AdminCategories = () => {
   const [totalCount, setTotalCount] = useState({});
   const [selectedCategory, setSelectedCategory] = useState({});
   const [axiosSecure] = useAxiosSecure();
-  const [isUploading, setIsUploading] = useState(false);
 
   const {
     data: categories,
     isLoading: isCategoryLoading,
-    refetch,
   } = useQuery({
     enabled: !isAuthLoading && user !== null && user !== undefined,
     queryKey: ["admin-categories"],
@@ -45,6 +46,37 @@ const AdminCategories = () => {
   }, [categories]);
 
   // add new category
+  //
+  // The image goes up inside the mutation, not before it: if Cloudinary
+  // refuses, the category must not be created with no picture while the screen
+  // says it worked.
+  const addCategory = useAdminMutation({
+    mutationFn: async ({ categoryName, file }) => {
+      // Uploaded through a server-signed request, the same path the product
+      // form uses, so the Cloudinary secret never reaches the browser.
+      let categoryPic = "";
+      if (file) {
+        try {
+          categoryPic = await uploadToCloudinary(file, axiosSecure);
+        } catch (uploadError) {
+          console.error("Category image upload failed:", uploadError);
+          throw certainFailure(
+            `The image could not be uploaded, so the category was not created. ${getErrorMessage(uploadError, "Please try again.")}`
+          );
+        }
+      }
+      const res = await axiosSecure.post("/categories", { categoryName, categoryPic });
+      if (!res.data?.success && !res.data?.insertedId) {
+        throw certainFailure("The server did not confirm the new category.");
+      }
+      return res.data;
+    },
+    invalidate: [["admin-categories"], ["categories"]],
+    successTitle: "Category added",
+    errorTitle: "Category not added",
+    errorFallback: "The category could not be created.",
+  });
+
   const handleAddCategory = async (e) => {
     e.preventDefault();
     setCategoryAddError(null);
@@ -61,8 +93,10 @@ const AdminCategories = () => {
     );
 
     if (categoryExists !== -1) {
+      // No form.reset() here. It used to clear the typed name on this exact
+      // failure, so the owner lost their input to a message telling them to
+      // change it.
       setCategoryAddError("Can't add category! Category already exists.");
-      form.reset();
       return;
     }
 
@@ -71,22 +105,12 @@ const AdminCategories = () => {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      // Uploaded through a server-signed request, the same path the product
-      // form uses, so the Cloudinary secret never reaches the browser.
-      const categoryPic = file ? await uploadToCloudinary(file, axiosSecure) : "";
-      const res = await axiosSecure.post("/categories", { categoryName, categoryPic });
-      if (res.data.success || res.data.insertedId) {
-        form.reset();
-        toast.success("Category Added Successfully", { position: "bottom-right" });
-        refetch();
-      }
-    } catch (err) {
-      setCategoryAddError(getErrorMessage(err, "Failed to add category"));
-    } finally {
-      setIsUploading(false);
-    }
+    addCategory.mutate(
+      { categoryName, file },
+      // Cleared only once the server has confirmed it — on failure the typed
+      // name and the chosen file are still there to correct and resubmit.
+      { onSuccess: () => form.reset() }
+    );
   };
 
   // update category data
@@ -95,6 +119,32 @@ const AdminCategories = () => {
 
     document.getElementById("update-category-modal").showModal();
   };
+
+  const updateCategory = useAdminMutation({
+    mutationFn: async ({ id, categoryName, file, existingPic }) => {
+      // No new file means keep whatever the category already has.
+      let categoryPic = existingPic;
+      if (file) {
+        try {
+          categoryPic = await uploadToCloudinary(file, axiosSecure);
+        } catch (uploadError) {
+          console.error("Category image upload failed:", uploadError);
+          throw certainFailure(
+            `The image could not be uploaded, so nothing was changed. ${getErrorMessage(uploadError, "Please try again.")}`
+          );
+        }
+      }
+      const res = await axiosSecure.patch(`/categories/${id}`, { categoryName, categoryPic });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the change.");
+      }
+      return res.data;
+    },
+    invalidate: [["admin-categories"], ["categories"], ["products"]],
+    successTitle: "Category updated",
+    errorTitle: "Category not updated",
+    errorFallback: "The category could not be updated.",
+  });
 
   const handleUpdateCategory = async (e) => {
     e.preventDefault();
@@ -114,27 +164,23 @@ const AdminCategories = () => {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      // No new file means keep whatever the category already has.
-      const categoryPic = file
-        ? await uploadToCloudinary(file, axiosSecure)
-        : selectedCategory?.categoryPic;
-      const res = await axiosSecure.patch(`/categories/${selectedCategory?._id}`, {
+    updateCategory.mutate(
+      {
+        id: selectedCategory?._id,
         categoryName: categoryName || selectedCategory?.categoryName,
-        categoryPic,
-      });
-      if (res.data.success) {
-        refetch();
-        document.getElementById("update-category-modal").close();
-        toast.success("Category Updated Successfully", { position: "bottom-right" });
-        setCategoryUpdateError(false);
+        file,
+        existingPic: selectedCategory?.categoryPic,
+      },
+      // The dialog closes only once the change is saved. Closing it first hid
+      // the form — and the owner's edits with it — behind a failure they then
+      // had to start over from.
+      {
+        onSuccess: () => {
+          document.getElementById("update-category-modal").close();
+          setCategoryUpdateError(false);
+        },
       }
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to update category"));
-    } finally {
-      setIsUploading(false);
-    }
+    );
   };
 
   return (
@@ -224,7 +270,8 @@ const AdminCategories = () => {
             </p>
           )}
 
-          <form className="space-y-6" onSubmit={handleAddCategory}>
+          <form className="space-y-6" onSubmit={handleAddCategory} aria-busy={addCategory.isLoading}>
+            <fieldset disabled={addCategory.isLoading} className="contents">
             <div className="flex flex-col">
               <label className="font-label-caps text-[11px] text-outline mb-2">Name of the Category</label>
               <input
@@ -250,10 +297,28 @@ const AdminCategories = () => {
 
             <button
               type="submit"
-              className="w-full flex justify-center items-center gap-2 bg-primary text-white py-3 rounded font-button-text hover:bg-primary/90 transition-colors"
+              disabled={addCategory.isLoading}
+              className="w-full flex justify-center items-center gap-2 bg-primary text-white py-3 rounded font-button-text hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <FiPlusCircle className="text-lg" /> Add Category
+              {addCategory.isLoading ? (
+                <>
+                  <span aria-hidden="true" className="loading loading-spinner loading-xs" />
+                  Adding…
+                </>
+              ) : (
+                <>
+                  <FiPlusCircle className="text-lg" /> Add Category
+                </>
+              )}
             </button>
+            <MutationStatus
+              mutation={addCategory}
+              pendingLabel="Uploading the image and adding the category…"
+              successLabel="Category added"
+              errorFallback="The category could not be created."
+              className="text-center"
+            />
+            </fieldset>
           </form>
         </div>
       </div>
@@ -277,7 +342,8 @@ const AdminCategories = () => {
             </p>
           )}
           
-          <form className="space-y-6" onSubmit={handleUpdateCategory}>
+          <form className="space-y-6" onSubmit={handleUpdateCategory} aria-busy={updateCategory.isLoading}>
+            <fieldset disabled={updateCategory.isLoading} className="contents">
             <div className="flex flex-col">
               <label className="font-label-caps text-[11px] text-outline mb-2">
                 Name of the Category
@@ -302,11 +368,25 @@ const AdminCategories = () => {
               <p className="text-[11px] text-on-surface-variant mt-2">Leave empty to keep the current image.</p>
             </div>
 
-            <div className="pt-4 flex justify-end">
-              <button type="submit" disabled={isUploading} className="disabled:opacity-60 bg-primary text-white px-6 py-3 min-h-11 rounded font-button-text hover:bg-primary/90 transition-colors">
-                Update Category
+            <div className="pt-4 flex items-center justify-end gap-4">
+              <MutationStatus
+                mutation={updateCategory}
+                pendingLabel="Saving the category…"
+                successLabel="Category saved"
+                errorFallback="The category could not be updated."
+              />
+              <button
+                type="submit"
+                disabled={updateCategory.isLoading}
+                className="disabled:opacity-60 disabled:cursor-not-allowed bg-primary text-white px-6 py-3 min-h-11 rounded font-button-text hover:bg-primary/90 transition-colors"
+              >
+                {updateCategory.isLoading && (
+                  <span aria-hidden="true" className="loading loading-spinner loading-xs mr-2 align-middle" />
+                )}
+                {updateCategory.isLoading ? "Saving…" : "Update Category"}
               </button>
             </div>
+            </fieldset>
           </form>
         </div>
         <form method="dialog" className="modal-backdrop">

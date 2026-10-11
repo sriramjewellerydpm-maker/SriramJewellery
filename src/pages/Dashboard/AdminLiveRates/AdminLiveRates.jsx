@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useQuery } from "react-query";
-import toast from "react-hot-toast";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
-import { getErrorMessage } from "../../../utils/errorMessage";
 import { RATE_BOUNDS } from "../../../../shared/rateBounds.js";
+import useAdminMutation from "../../../hooks/useAdminMutation";
+import MutationStatus from "../../../components/MutationStatus/MutationStatus";
+import { certainFailure } from "../../../utils/mutationError";
 
 const AdminLiveRates = () => {
   // Bounds are served by GET /api/rates so the hint always matches whatever
@@ -15,9 +16,8 @@ const AdminLiveRates = () => {
   const [axiosSecure] = useAxiosSecure();
   const [goldRate, setGoldRate] = useState("");
   const [silverRate, setSilverRate] = useState("");
-  const [isUpdating, setIsUpdating] = useState(false);
   
-  const { data: rates, isLoading: isRatesLoading, refetch } = useQuery({
+  const { data: rates, isLoading: isRatesLoading } = useQuery({
     queryKey: ["admin-rates"],
     queryFn: async () => {
       const result = await axiosSecure.get("/rates");
@@ -37,29 +37,34 @@ const AdminLiveRates = () => {
   const GOLD_RANGE = rates?.bounds?.gold || DEFAULT_BOUNDS.gold;
   const SILVER_RANGE = rates?.bounds?.silver || DEFAULT_BOUNDS.silver;
 
+  // The server rejects implausible rates with a message naming the valid band
+  // — the usual cause is entering the per-10-gram price into a per-gram field.
+  // That message is a 4xx, so it reaches the owner verbatim rather than as
+  // "failed to update".
+  const updateRates = useAdminMutation({
+    mutationFn: async ({ gold, silver }) => {
+      const res = await axiosSecure.patch("/rates", { gold, silver });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the new rates.");
+      }
+      return res.data;
+    },
+    // Both keys. The admin page caches the rates under ["admin-rates"] while
+    // every storefront price comes from useRates' ["rates"] — refetching only
+    // the first left the shop quoting yesterday's rate until the cache aged
+    // out. Prices are computed from these, so the stale copy was mispricing.
+    invalidate: [["admin-rates"], ["rates"], ["products"], ["product"]],
+    successTitle: "Live rates updated",
+    successText: "All prices now use the new rates.",
+    errorTitle: "Rates unchanged",
+    errorFallback: "The rates could not be updated.",
+  });
+
+  const isUpdating = updateRates.isLoading;
+
   const handleUpdateRates = (e) => {
     e.preventDefault();
-    setIsUpdating(true);
-    axiosSecure.patch("/rates", {
-      gold: Number(goldRate),
-      silver: Number(silverRate)
-    })
-    .then((res) => {
-      if (res.data.success) {
-        toast.success("Live rates updated successfully");
-        refetch();
-      }
-    })
-    .catch((err) => {
-      // The server rejects implausible rates with a message naming the valid
-      // band — the usual cause is entering the per-10-gram price into a
-      // per-gram field. Swallowing that behind "Failed to update rates" left
-      // the owner with no idea what was wrong.
-      toast.error(getErrorMessage(err, "Failed to update rates"), { duration: 6000 });
-    })
-    .finally(() => {
-      setIsUpdating(false);
-    });
+    updateRates.mutate({ gold: Number(goldRate), silver: Number(silverRate) });
   };
 
   return (
@@ -122,7 +127,9 @@ const AdminLiveRates = () => {
               These rates will be displayed on the customer frontend and used to calculate dynamic prices.
             </p>
             
-            <form onSubmit={handleUpdateRates} className="space-y-6">
+            <form onSubmit={handleUpdateRates} aria-busy={isUpdating} className="space-y-6">
+              {/* One disabled attribute for every control inside. */}
+              <fieldset disabled={isUpdating} className="contents">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block font-label-caps text-outline text-[11px] mb-2">New Gold Rate (₹ / g)</label>
@@ -165,15 +172,25 @@ const AdminLiveRates = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-4">
+              <div className="flex items-center justify-end gap-4 pt-4">
+                <MutationStatus
+                  mutation={updateRates}
+                  pendingLabel="Saving the new rates…"
+                  successLabel="Rates saved"
+                  errorFallback="The rates could not be updated."
+                />
                 <button 
                   type="submit" 
                   disabled={isUpdating}
                   className="bg-primary text-white px-8 py-3 rounded-lg font-button-text hover:bg-primary-container active:scale-95 transition-ui shadow-lg shadow-primary/20 disabled:opacity-50 disabled:pointer-events-none"
                 >
-                  {isUpdating ? "Saving..." : "Save New Rates"}
+                  {isUpdating && (
+                    <span aria-hidden="true" className="loading loading-spinner loading-xs mr-2 align-middle" />
+                  )}
+                  {isUpdating ? "Saving…" : "Save New Rates"}
                 </button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>

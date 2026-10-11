@@ -1,11 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "react-query";
+import { useQuery } from "react-query";
 import useAxiosSecure from "./useAxiosSecure";
 import useAuthContext from "./useAuthContext";
+import useAdminMutation from "./useAdminMutation";
+import { certainFailure } from "../utils/mutationError";
 
 const useQuotes = () => {
   const { user, isAuthLoading } = useAuthContext();
   const [axiosSecure] = useAxiosSecure();
-  const queryClient = useQueryClient();
   const hasValidUser = !isAuthLoading && !!user;
 
   const { data: quotes, isLoading, refetch } = useQuery({
@@ -17,14 +18,21 @@ const useQuotes = () => {
     },
   });
 
-  const updateQuoteStatus = useMutation({
+  const updateQuoteStatus = useAdminMutation({
     mutationFn: async ({ id, status }) => {
       const res = await axiosSecure.patch(`/quotes/${id}/status`, { status });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the status change.");
+      }
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["quotes"]);
-    },
+    // ["admin-quotes"] is the same list under the admin page's key, and
+    // ["quote-summary"] is the count in the navigation, which would otherwise
+    // keep counting a quote already dealt with.
+    invalidate: [["quotes"], ["admin-quotes"], ["quote-summary"]],
+    successTitle: "Quote status updated",
+    errorTitle: "Status unchanged",
+    errorFallback: "The quote status could not be changed.",
   });
 
   return { quotes, isLoading, refetch, updateQuoteStatus };

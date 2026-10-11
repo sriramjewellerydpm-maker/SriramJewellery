@@ -4,9 +4,11 @@ import useProducts from "../../../hooks/useProducts";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
 import Swal from "sweetalert2";
 import { optimizeCloudinaryUrl } from "../../../utils/cloudinaryImage";
+import useAdminMutation from "../../../hooks/useAdminMutation";
+import { certainFailure } from "../../../utils/mutationError";
 
 const AdminProducts = () => {
-  const [products, isProductsLoading, refetch] = useProducts();
+  const [products, isProductsLoading] = useProducts();
   const [axiosSecure] = useAxiosSecure();
   const [searchText, setSearchText] = useState("");
   
@@ -23,8 +25,46 @@ const AdminProducts = () => {
     currentPage * itemsPerPage
   );
 
-  const handleDeleteProduct = (_id) => {
-    Swal.fire({
+  // Both row actions used to swallow their own failure: the toggle logged to
+  // the console and left the switch showing the old position, and a delete
+  // that answered anything other than { success: true } produced no dialog at
+  // all. Neither had a pending state, so either could be fired twice.
+  const deleteProduct = useAdminMutation({
+    mutationFn: async (_id) => {
+      const res = await axiosSecure.delete(`/products/${_id}`);
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the deletion.");
+      }
+      return res.data;
+    },
+    invalidate: [["products"], ["admin-stats"], ["admin-best-selling"]],
+    successTitle: "Product deleted",
+    errorTitle: "Product not deleted",
+    errorFallback: "The product could not be deleted.",
+  });
+
+  const toggleVisibility = useAdminMutation({
+    mutationFn: async ({ _id, nextStatus }) => {
+      const res = await axiosSecure.patch(`/products/${_id}`, { isActive: nextStatus });
+      if (!res.data?.success && !res.data?.modifiedCount) {
+        throw certainFailure("The server did not confirm the change.");
+      }
+      return res.data;
+    },
+    invalidate: [["products"]],
+    successTitle: "Visibility updated",
+    errorTitle: "Visibility unchanged",
+    errorFallback: "The product's visibility could not be changed.",
+  });
+
+  // Which row is busy, so a spinner lands on the one that was clicked rather
+  // than on all of them.
+  const isDeleting = (_id) => deleteProduct.isLoading && deleteProduct.variables === _id;
+  const isToggling = (_id) => toggleVisibility.isLoading && toggleVisibility.variables?._id === _id;
+  const isRowBusy = (_id) => isDeleting(_id) || isToggling(_id);
+
+  const handleDeleteProduct = async (_id) => {
+    const { isConfirmed } = await Swal.fire({
       title: "Are you sure?",
       text: "This product will be deleted.",
       icon: "warning",
@@ -32,30 +72,12 @@ const AdminProducts = () => {
       confirmButtonColor: "#704c31",
       cancelButtonColor: "#ba1a1a",
       confirmButtonText: "Yes, delete it!"
-    }).then((result) => {
-      if (result.isConfirmed) {
-        axiosSecure.delete(`/products/${_id}`).then((res) => {
-          if (res.data.success) {
-            refetch();
-            Swal.fire("Deleted!", "Product has been deleted.", "success");
-          }
-        }).catch(err => {
-            console.error("Delete failed:", err);
-            Swal.fire("Error!", "Could not delete product.", "error");
-        });
-      }
     });
+    if (isConfirmed) deleteProduct.mutate(_id);
   };
 
   const handleToggleVisibility = (_id, currentStatus) => {
-    axiosSecure.patch(`/products/${_id}`, { isActive: !currentStatus })
-      .then(res => {
-        if (res.data.success || res.data.modifiedCount > 0) {
-          refetch();
-        }
-      }).catch(err => {
-        console.error("Toggle visibility failed:", err);
-      });
+    toggleVisibility.mutate({ _id, nextStatus: !currentStatus });
   };
 
   return (
@@ -99,7 +121,11 @@ const AdminProducts = () => {
             </thead>
             <tbody className="divide-y divide-outline-variant/20">
               {paginatedProducts.map(product => (
-                <tr key={product._id} className="hover:bg-white/40 transition-colors group">
+                <tr
+                  key={product._id}
+                  aria-busy={isRowBusy(product._id)}
+                  className={`hover:bg-white/40 transition-colors group ${isRowBusy(product._id) ? "opacity-60" : ""}`}
+                >
                   <td className="px-6 py-4">
                     <div className="w-16 h-16 rounded bg-surface-container-highest border border-outline-variant/30 overflow-hidden">
                       <img src={optimizeCloudinaryUrl(product.image || product.img, { width: 150 }) || '/placeholder.jpg'} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -147,6 +173,9 @@ const AdminProducts = () => {
                         type="checkbox" 
                         className="sr-only" 
                         checked={product.isActive !== false} 
+                        disabled={isRowBusy(product._id)}
+                        aria-busy={isToggling(product._id)}
+                        aria-label={`${product.isActive !== false ? "Hide" : "Show"} ${product.name}`}
                         onChange={() => handleToggleVisibility(product._id, product.isActive !== false)}
                       />
                       <span className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 transition-ui duration-300 rounded-[34px] ${product.isActive !== false ? 'bg-primary-container' : 'bg-outline-variant'} before:absolute before:content-[''] before:h-[16px] before:w-[16px] before:left-[3px] before:bottom-[3px] before:bg-white before:transition-ui before:duration-300 before:rounded-full ${product.isActive !== false ? 'before:translate-x-[22px]' : ''}`}></span>
@@ -159,8 +188,17 @@ const AdminProducts = () => {
                           <span className="material-symbols-outlined text-[18px]">edit</span>
                         </button>
                       </Link>
-                      <button onClick={() => handleDeleteProduct(product._id)} className="w-9 h-9 flex items-center justify-center rounded-lg border border-outline-variant/50 text-outline hover:text-error hover:border-error transition-ui">
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      <button
+                        onClick={() => handleDeleteProduct(product._id)}
+                        disabled={isRowBusy(product._id)}
+                        aria-label={`Delete ${product.name}`}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg border border-outline-variant/50 text-outline hover:text-error hover:border-error transition-ui disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isDeleting(product._id) ? (
+                          <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        )}
                       </button>
                     </div>
                   </td>

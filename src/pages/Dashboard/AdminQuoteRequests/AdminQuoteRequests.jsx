@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { useQuery, useQueryClient } from "react-query";
+import { useQuery } from "react-query";
 import Select from "react-select";
-import toast from "react-hot-toast";
 import { Pagination } from "react-pagination-bar";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
+import useAdminMutation from "../../../hooks/useAdminMutation";
+import { certainFailure } from "../../../utils/mutationError";
 import 'react-pagination-bar/dist/index.css';
 
 const formatPhone = (phone) => {
@@ -25,7 +26,6 @@ const ChannelBadge = ({ channel }) =>
 
 const AdminQuoteRequests = () => {
   const [axiosSecure] = useAxiosSecure();
-  const queryClient = useQueryClient();
   
   const { data: quoteRequests, isLoading: isQuotesLoading, refetch } = useQuery({
     queryKey: ["admin-quotes"],
@@ -35,21 +35,32 @@ const AdminQuoteRequests = () => {
     },
   });
 
-  const handleStatusChange = (selectedOption, quoteId) => {
-    axiosSecure.patch(`/quotes/${quoteId}/status`, {
-      status: selectedOption.value,
-    })
-    .then((res) => {
-      if (res.data.success) {
-        toast.success("Quote status updated");
-        refetch();
-        queryClient.invalidateQueries(["quote-summary"]); // the count in the navigation
+  const changeStatus = useAdminMutation({
+    mutationFn: async ({ quoteId, status }) => {
+      const res = await axiosSecure.patch(`/quotes/${quoteId}/status`, { status });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the status change.");
       }
-    })
-    .catch((e) => {
-      console.error(e);
-      toast.error("Failed to update status");
-    });
+      return res.data;
+    },
+    // ["quotes"] as well as ["admin-quotes"]: useQuotes caches the same list
+    // under the shorter key, and ["quote-summary"] is the unread count in the
+    // navigation, which would otherwise keep counting a quote already handled.
+    invalidate: [["admin-quotes"], ["quotes"], ["quote-summary"]],
+    successTitle: "Quote status updated",
+    errorTitle: "Status unchanged",
+    errorFallback: "The quote status could not be changed.",
+  });
+
+  const isRowBusy = (id) =>
+    changeStatus.isLoading && changeStatus.variables?.quoteId === id;
+
+  const handleStatusChange = (selectedOption, quoteId) => {
+    changeStatus.mutate(
+      { quoteId, status: selectedOption.value },
+      // The select is showing the value the server has just refused.
+      { onError: () => refetch() }
+    );
   };
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,7 +122,7 @@ const AdminQuoteRequests = () => {
                     <td colSpan="7" className="px-6 py-10 text-center text-outline">Loading requests...</td>
                   </tr>
                 ) : displayedQuotes?.map((quote) => (
-                  <tr key={quote._id} className="hover:bg-white/40 transition-colors group" data-testid="quote-row">
+                  <tr key={quote._id} aria-busy={isRowBusy(quote._id)} className="hover:bg-white/40 transition-colors group" data-testid="quote-row">
                     <td className="px-6 py-4">
                       {/* What the customer's WhatsApp message quotes. Older
                           enquiries were made before references existed. */}
@@ -158,6 +169,8 @@ const AdminQuoteRequests = () => {
                         ]}
                         value={{ value: quote.status, label: quote.status }}
                         onChange={(e) => handleStatusChange(e, quote._id)}
+                        isDisabled={isRowBusy(quote._id)}
+                        isLoading={isRowBusy(quote._id)}
                         styles={selectStyles}
                         className="w-36"
                         isSearchable={false}

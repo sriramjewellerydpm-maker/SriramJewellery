@@ -5,9 +5,10 @@ import { GrUserAdmin, GrTrash } from "react-icons/gr";
 import { Pagination } from "react-pagination-bar";
 import { userDisplayName } from "../../utils/displayName";
 import Swal from "sweetalert2";
-import toast from "react-hot-toast";
 import useAuthContext from "../../hooks/useAuthContext";
 import useAxiosSecure from "../../hooks/useAxiosSecure";
+import useAdminMutation from "../../hooks/useAdminMutation";
+import { certainFailure } from "../../utils/mutationError";
 
 const PAGE_SIZE = 10;
 
@@ -83,7 +84,6 @@ const AdminManageUsers = () => {
   const {
     data: allUsers,
     isLoading: isUsersLoading,
-    refetch,
   } = useQuery({
     enabled: !isAuthLoading && Boolean(user) && (userFromDB?.admin === true || userFromDB?.role === "ADMIN"),
     queryKey: ["all-users"],
@@ -112,22 +112,47 @@ const AdminManageUsers = () => {
   const ariaSort = (column) =>
     sort === `${column}_desc` ? "descending" : sort === `${column}_asc` ? "ascending" : "none";
 
-  const handleMakeAdmin = (id) => {
-    axiosSecure
-      .patch(`/users/${id}`, { role: "ADMIN" })
-      .then((res) => {
-        if (res.data.success) {
-          toast.success("The user is now an Admin");
-          refetch();
-        }
-      })
-      // The server refuses to promote customer accounts (they sign in with an
-      // emailed code, never a password). Say why instead of failing silently.
-      .catch((e) => toast.error(e.response?.data?.error || "Could not change this user's role"));
-  };
+  // The server refuses to promote customer accounts (they sign in with an
+  // emailed code, never a password). That refusal is a 4xx, so its reason
+  // reaches the owner verbatim.
+  const makeAdmin = useAdminMutation({
+    mutationFn: async (id) => {
+      const res = await axiosSecure.patch(`/users/${id}`, { role: "ADMIN" });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the role change.");
+      }
+      return res.data;
+    },
+    invalidate: [["all-users"], ["user"]],
+    successTitle: "The user is now an Admin",
+    errorTitle: "Role unchanged",
+    errorFallback: "This user's role could not be changed.",
+  });
 
-  const handleDeleteUser = (id) => {
-    Swal.fire({
+  const deleteUser = useAdminMutation({
+    mutationFn: async (id) => {
+      const res = await axiosSecure.delete(`/users/${id}`);
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the deletion.");
+      }
+      return res.data;
+    },
+    invalidate: [["all-users"], ["admin-stats"]],
+    successTitle: "User removed",
+    successText: "All data associated with the user is deleted.",
+    errorTitle: "User not removed",
+    errorFallback: "This user could not be removed.",
+  });
+
+  // Which row is busy, so the spinner lands on the one that was clicked.
+  const isRowBusy = (id) =>
+    (makeAdmin.isLoading && makeAdmin.variables === id) ||
+    (deleteUser.isLoading && deleteUser.variables === id);
+
+  const handleMakeAdmin = (id) => makeAdmin.mutate(id);
+
+  const handleDeleteUser = async (id) => {
+    const { isConfirmed } = await Swal.fire({
       title: "BE CAREFUL!",
       text: "All information associated with this user will be removed.",
       icon: "warning",
@@ -136,31 +161,26 @@ const AdminManageUsers = () => {
       cancelButtonColor: "#ef4c53",
       confirmButtonText: "Yes, delete it!",
       customClass: { popup: "w-[85%] md:w-[32em]" },
-    }).then((result) => {
-      if (!result.isConfirmed) return;
-      axiosSecure
-        .delete(`/users/${id}`)
-        .then((res) => {
-          if (res.data.success) {
-            Swal.fire({ title: "Deletion Successful!", text: "All data associated with the user is deleted.", icon: "success" });
-            refetch();
-          }
-        })
-        .catch((e) => toast.error(e.response?.data?.error || "Could not remove this user"));
     });
+    if (isConfirmed) deleteUser.mutate(id);
   };
 
   const Actions = ({ row }) => (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-end gap-2" aria-busy={isRowBusy(row._id)}>
       {row.role !== "ADMIN" && (
         <div className="tooltip" data-tip="Make Admin">
           <button
             type="button"
             aria-label={`Make ${userDisplayName(row)} an admin`}
-            className="inline-flex items-center justify-center w-11 h-11 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+            className="inline-flex items-center justify-center w-11 h-11 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isRowBusy(row._id)}
             onClick={() => handleMakeAdmin(row._id)}
           >
-            <GrUserAdmin className="text-lg" />
+            {makeAdmin.isLoading && makeAdmin.variables === row._id ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : (
+              <GrUserAdmin className="text-lg" />
+            )}
           </button>
         </div>
       )}
@@ -168,10 +188,15 @@ const AdminManageUsers = () => {
         <button
           type="button"
           aria-label={`Remove ${userDisplayName(row)}`}
-          className="inline-flex items-center justify-center w-11 h-11 rounded text-error/70 hover:text-error hover:bg-error-container/50 transition-colors"
+          className="inline-flex items-center justify-center w-11 h-11 rounded text-error/70 hover:text-error hover:bg-error-container/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={isRowBusy(row._id)}
           onClick={() => handleDeleteUser(row._id)}
         >
-          <GrTrash className="text-lg" />
+          {deleteUser.isLoading && deleteUser.variables === row._id ? (
+            <span className="loading loading-spinner loading-xs" />
+          ) : (
+            <GrTrash className="text-lg" />
+          )}
         </button>
       </div>
     </div>

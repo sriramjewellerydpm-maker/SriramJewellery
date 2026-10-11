@@ -14,6 +14,9 @@ import useCategories from "../../../hooks/useCategories";
 import { uploadToCloudinary } from "../../../utils/uploadToCloudinary";
 import ProductImagePicker from "../../../components/ProductImagePicker/ProductImagePicker";
 import { selectionBlockers } from "../../../utils/imageSelection";
+import useAdminMutation from "../../../hooks/useAdminMutation";
+import MutationStatus from "../../../components/MutationStatus/MutationStatus";
+import { certainFailure } from "../../../utils/mutationError";
 import { getErrorMessage } from "../../../utils/errorMessage";
 
 const AdminAddProduct = () => {
@@ -114,11 +117,90 @@ const AdminAddProduct = () => {
     }
   }, [reset, dynamicProduct, defaultBadges]);
 
-  // Uploads directly to Cloudinary using a short-lived signature minted by our
-  // server, so the API secret never reaches the browser.
+  // The save, end to end: images up to Cloudinary first, then the product.
+  //
+  // Both halves are inside the one mutationFn deliberately. An image that will
+  // not upload has to fail the WHOLE save — the Cloudinary 403 showed what the
+  // alternative looks like, an error dialog over a half-filled form with no way
+  // to tell whether anything had been written.
+  const saveProduct = useAdminMutation({
+    mutationFn: async ({ product, entries }) => {
+      try {
+        if (entries.length) {
+          // Sequentially, not Promise.all: each upload is a signed request of
+          // its own, and when one fails this says WHICH one rather than
+          // failing the batch anonymously.
+          const uploaded = [];
+          for (const entry of entries) {
+            setUploadingImage(entry.name);
+            try {
+              uploaded.push(await uploadToCloudinary(entry.file, axiosSecure));
+            } catch (uploadError) {
+              console.error("Upload failed:", uploadError);
+              // Certain: the product request never went out, so nothing was
+              // written. The reason comes from Cloudinary or from our signature
+              // endpoint — a missing CLOUDINARY_URL answers 503, an expired
+              // session 401 — all of which the owner can act on.
+              throw certainFailure(
+                `"${entry.name}" could not be uploaded, so nothing was saved. ` +
+                  getErrorMessage(uploadError, "Please try again.")
+              );
+            }
+          }
+          product.images = uploaded;
+          // img stays the primary everywhere else reads from.
+          product.img = uploaded[0];
+        } else {
+          // Editing without choosing new files keeps whatever the piece already
+          // has. Without carrying `images` too, saving any other field would
+          // silently drop the gallery and leave only the primary.
+          product.img = dynamicProduct.img;
+          product.images = dynamicProduct.images?.length
+            ? dynamicProduct.images
+            : [dynamicProduct.img].filter(Boolean);
+        }
+
+        const res = dynamicProduct
+          ? await axiosSecure.patch(`/products/${dynamicProduct._id}`, product)
+          : await axiosSecure.post("/products", product);
+
+        // A 2xx is not the same as a save. The route answers { success } and
+        // the old code showed its success dialog inside `if (res.data.success)`
+        // — so a 200 that did not confirm produced no dialog at all, and the
+        // owner was left with a form and no idea what had happened.
+        if (!res.data?.success) {
+          throw certainFailure(
+            getErrorMessage(res.data, "The server did not confirm the save.")
+          );
+        }
+        return res.data;
+      } finally {
+        setUploadingImage(null);
+      }
+    },
+    // Refetched before the confirmation appears, so the list the owner lands
+    // back on shows the row they just saved, and an edit re-populates the form
+    // from the database rather than from what we hoped we sent.
+    invalidate: [["products"], ["product"], ["admin-stats"], ["admin-best-selling"]],
+    successTitle: dynamicProduct ? "Product updated" : "Product published",
+    successText: "The listing now shows the saved details.",
+    errorTitle: dynamicProduct ? "Product not updated" : "Product not published",
+    errorFallback: "The product could not be saved.",
+    onSuccess: () => {
+      // A new piece starts from a blank form; an edit keeps showing the piece,
+      // now refreshed from the database by the invalidation above.
+      if (!dynamicProduct) {
+        reset();
+        setImageEntries([]);
+        setDefaultBadges([]);
+      }
+    },
+  });
+
+  const isSaving = saveProduct.isLoading;
+
   const onSubmit = async (data) => {
-    try {
-      const badges = data?.selectedBadges?.map((b) => b?.value);
+    const badges = data?.selectedBadges?.map((b) => b?.value);
     const product = {
       name: data.name,
       category: data.category,
@@ -169,59 +251,13 @@ const AdminAddProduct = () => {
       showCancelButton: true,
       confirmButtonColor: "#000",
       cancelButtonColor: "#ef4c53",
-      confirmButtonText: "Yes, Publish it!",
+      confirmButtonText: dynamicProduct ? "Yes, Publish the edit!" : "Yes, Publish it!",
     });
     if (!isConfirmed) return;
 
-    if (imageEntries.length) {
-      try {
-        // Sequentially, not Promise.all: each upload is a signed request of
-        // its own, and when one fails this says WHICH one rather than failing
-        // the batch anonymously.
-        const uploaded = [];
-        // Over the entries, not the files: a downscaled file is renamed .jpg,
-        // and the progress line should name what the owner picked.
-        for (const entry of imageEntries) {
-          setUploadingImage(entry.name);
-          uploaded.push(await uploadToCloudinary(entry.file, axiosSecure));
-        }
-        product.images = uploaded;
-        // img stays the primary everywhere else reads from.
-        product.img = uploaded[0];
-      } catch (uploadError) {
-        console.error(uploadError);
-        // The real reason, not just "it failed". A missing CLOUDINARY_URL
-        // answers 503 "Cloudinary is not configured", an expired session 401,
-        // and Cloudinary's own refusals carry their message — all of which the
-        // shop owner can act on, where the old generic line left them stuck.
-        Swal.fire("Upload Failed", getErrorMessage(uploadError, "Could not upload the image. Please try again."), "error");
-        return;
-      }
-    } else {
-      // Editing without choosing new files keeps whatever the piece already
-      // has. Without carrying `images` too, saving any other field would
-      // silently drop the gallery and leave only the primary.
-      product.img = dynamicProduct.img;
-      product.images = dynamicProduct.images?.length
-        ? dynamicProduct.images
-        : [dynamicProduct.img].filter(Boolean);
-    }
-
-    const res = dynamicProduct
-      ? await axiosSecure.patch(`/products/${dynamicProduct._id}`, product)
-      : await axiosSecure.post("/products", product);
-
-    if (res.data.success) {
-      Swal.fire({
-        title: "Success!",
-        text: `Product has been ${dynamicProduct ? "updated" : "added"} successfully`,
-        icon: "success",
-      });
-    }
-    } catch (err) {
-      console.error("Submit Error: ", err);
-      Swal.fire("Submit Error", "An error occurred during submission: " + err.message, "error");
-    }
+    // No await and no try/catch: the mutation owns both outcomes, and
+    // awaiting a rejected mutation here would raise an unhandled rejection.
+    saveProduct.mutate({ product, entries: imageEntries });
   };
 
   return (
@@ -304,8 +340,13 @@ const AdminAddProduct = () => {
         <div>
           <form
             onSubmit={handleSubmit(onSubmit)}
+            aria-busy={isSaving}
             className="loginRegisterForm my-10 flex flex-col md:flex-row md:items-start md:justify-between gap-8 relative"
           >
+            {/* A fieldset, because `disabled` on one disables every control
+                inside it — there is no second place to forget. `contents`
+                keeps it out of the layout, which the flex row above relies on. */}
+            <fieldset disabled={isSaving} className="contents">
             <div className="md:w-[65%]">
               <div className="bg-surface-container-low/50 border border-sand/30 p-6 md:p-8 hover:bg-white transition-ui rounded-xl">
                 <h4 className="font-display-md text-headline-sm text-primary border-b border-sand/30 pb-4 mb-8">
@@ -522,6 +563,7 @@ const AdminAddProduct = () => {
                   }
                   uploadingImage={uploadingImage}
                   error={imageError}
+                  disabled={isSaving}
                 />
               </div>
 
@@ -570,6 +612,7 @@ const AdminAddProduct = () => {
                     defaultValue={[]}
                     render={({ field }) => (
                       <Select
+                        isDisabled={isSaving}
                         {...field}
                         isMulti
                         options={tagOptions}
@@ -671,13 +714,25 @@ const AdminAddProduct = () => {
             <div className="md:absolute md:-top-20 md:right-0 w-full md:w-auto flex flex-col md:items-end gap-2">
               <button
                 type="submit"
-                disabled={submitBlockers.length > 0}
+                disabled={submitBlockers.length > 0 || isSaving}
                 className="bg-primary text-white py-4 md:py-5 px-8 font-button-text uppercase tracking-[0.2em] text-[12px] hover:bg-primary-container transition-ui duration-500 transform hover:scale-[1.01] active:scale-[0.98] w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {dynamicProduct ? "Publish Edit" : "Publish"}
+                {isSaving && (
+                  <span
+                    aria-hidden="true"
+                    className="loading loading-spinner loading-xs mr-2 align-middle"
+                  />
+                )}
+                {isSaving
+                  ? dynamicProduct
+                    ? "Publishing edit…"
+                    : "Publishing…"
+                  : dynamicProduct
+                  ? "Publish Edit"
+                  : "Publish"}
               </button>
               {/* A dead button with no explanation is the thing this replaces. */}
-              {submitBlockers.length > 0 && (
+              {submitBlockers.length > 0 && !isSaving && (
                 <p
                   className="text-xs text-error md:text-right max-w-xs"
                   aria-live="polite"
@@ -685,7 +740,21 @@ const AdminAddProduct = () => {
                   {submitBlockers[0]}
                 </p>
               )}
+              <MutationStatus
+                mutation={saveProduct}
+                pendingLabel={
+                  uploadingImage
+                    ? `Uploading ${uploadingImage}…`
+                    : dynamicProduct
+                    ? "Publishing the edit…"
+                    : "Publishing…"
+                }
+                successLabel={dynamicProduct ? "Edit published" : "Published"}
+                errorFallback="The product could not be saved."
+                className="md:text-right"
+              />
             </div>
+            </fieldset>
           </form>
         </div>
       </div>

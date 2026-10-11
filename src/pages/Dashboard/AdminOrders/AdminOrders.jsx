@@ -9,6 +9,8 @@ import LineChartComponent from "../../../components/LineChartComponent/LineChart
 import useAdminStats from "../../../hooks/useAdminStats";
 import useAuthContext from "../../../hooks/useAuthContext";
 import useAxiosSecure from "../../../hooks/useAxiosSecure";
+import useAdminMutation from "../../../hooks/useAdminMutation";
+import { certainFailure } from "../../../utils/mutationError";
 import 'react-pagination-bar/dist/index.css';
 
 const AdminOrders = () => {
@@ -33,26 +35,56 @@ const AdminOrders = () => {
   const { incomeStats } = useAdminStats();
   const refundsOwed = (allOrders || []).filter((o) => o.refundRequired);
 
-  const handleStatusChange = (selectedOption, orderId) => {
-    axiosSecure.patch(`/orders/${orderId}/status`, {
-      status: selectedOption.value,
-    })
-    .then((res) => {
-      if (res.data.success) {
-        toast.success("Order status updated");
-        refetch();
+  // The server refuses changes the order lifecycle does not allow (e.g. an
+  // expired order to shipped); its reason is what the select shows.
+  const changeStatus = useAdminMutation({
+    mutationFn: async ({ orderId, status }) => {
+      const res = await axiosSecure.patch(`/orders/${orderId}/status`, { status });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the status change.");
       }
-    })
-    // The server refuses changes the order lifecycle does not allow (e.g. an
-    // expired order to shipped); show its reason and put the select back.
-    .catch((e) => {
-      toast.error(e.response?.data?.error || "Could not update the order status");
-      refetch();
-    });
+      return res.data;
+    },
+    // Refetched either way — on success so the row shows the new status, and
+    // on failure (below) so the select snaps back off the stale value it is
+    // now showing.
+    invalidate: [["all-orders"], ["orders"], ["admin-stats"], ["admin-income-stats"]],
+    successTitle: "Order status updated",
+    errorTitle: "Status unchanged",
+    errorFallback: "The order status could not be changed.",
+  });
+
+  const handleStatusChange = (selectedOption, orderId) => {
+    changeStatus.mutate(
+      { orderId, status: selectedOption.value },
+      // The select is uncontrolled against the server, so after a refusal it
+      // is still displaying the value the server rejected.
+      { onError: () => refetch() }
+    );
   };
 
   // The 15-day delivery window is computed server-side from the approval time;
   // this only reports the outcome.
+  const setApproval = useAdminMutation({
+    mutationFn: async ({ orderId, approvalStatus, rejectionReason }) => {
+      const res = await axiosSecure.patch(`/orders/${orderId}/approval`, {
+        approvalStatus,
+        rejectionReason,
+      });
+      if (!res.data?.success) {
+        throw certainFailure("The server did not confirm the decision.");
+      }
+      return res.data;
+    },
+    invalidate: [["all-orders"], ["orders"], ["admin-stats"], ["admin-income-stats"]],
+    successTitle: (_data, { approvalStatus }) =>
+      approvalStatus === "APPROVED" ? "Order approved" : "Order declined",
+    successText: (_data, { approvalStatus }) =>
+      approvalStatus === "APPROVED" ? "15-day delivery window started" : "",
+    errorTitle: "Order unchanged",
+    errorFallback: "The order could not be updated.",
+  });
+
   const handleApproval = (orderId, approvalStatus) => {
     let rejectionReason;
     if (approvalStatus === "REJECTED") {
@@ -71,20 +103,14 @@ const AdminOrders = () => {
       }
     }
 
-    axiosSecure
-      .patch(`/orders/${orderId}/approval`, { approvalStatus, rejectionReason })
-      .then((res) => {
-        if (res.data.success) {
-          toast.success(
-            approvalStatus === "APPROVED"
-              ? "Order approved — 15-day delivery window started"
-              : "Order declined"
-          );
-          refetch();
-        }
-      })
-      .catch((e) => toast.error(e.response?.data?.error || "Failed to update approval"));
+    setApproval.mutate({ orderId, approvalStatus, rejectionReason });
   };
+
+  // Which row is mid-change, so the spinner and the disabling land on the one
+  // that was clicked rather than on the whole table.
+  const isApproving = (id) => setApproval.isLoading && setApproval.variables?.orderId === id;
+  const isRestatusing = (id) => changeStatus.isLoading && changeStatus.variables?.orderId === id;
+  const isRowBusy = (id) => isApproving(id) || isRestatusing(id);
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageProductLimit = 6;
@@ -171,7 +197,7 @@ const AdminOrders = () => {
                     <td colSpan="9" className="px-6 py-10 text-center text-outline">Loading orders...</td>
                   </tr>
                 ) : allOrders?.slice((currentPage - 1) * pageProductLimit, currentPage * pageProductLimit).map((order) => (
-                  <tr key={order._id} className="hover:bg-white/40 transition-colors group">
+                  <tr key={order._id} aria-busy={isRowBusy(order._id)} className="hover:bg-white/40 transition-colors group">
                     <td className="px-6 py-4">
                       <p className="font-button-text text-primary">#{order.orderId}</p>
                     </td>
@@ -212,14 +238,20 @@ const AdminOrders = () => {
                           <button
                             type="button"
                             onClick={() => handleApproval(order._id, "APPROVED")}
-                            className="inline-flex items-center justify-center min-h-11 px-3 py-2 rounded border border-success/40 text-[12px] font-medium text-success hover:bg-success hover:text-white transition-ui"
+                            disabled={isRowBusy(order._id)}
+                            className="inline-flex items-center justify-center min-h-11 px-3 py-2 rounded border border-success/40 text-[12px] font-medium text-success hover:bg-success hover:text-white transition-ui disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            Approve
+                            {isApproving(order._id) ? (
+                              <span className="loading loading-spinner loading-xs" />
+                            ) : (
+                              "Approve"
+                            )}
                           </button>
                           <button
                             type="button"
                             onClick={() => handleApproval(order._id, "REJECTED")}
-                            className="inline-flex items-center justify-center min-h-11 px-3 py-2 rounded border border-error/40 text-[12px] font-medium text-error hover:bg-error hover:text-white transition-ui"
+                            disabled={isRowBusy(order._id)}
+                            className="inline-flex items-center justify-center min-h-11 px-3 py-2 rounded border border-error/40 text-[12px] font-medium text-error hover:bg-error hover:text-white transition-ui disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Reject
                           </button>
@@ -259,6 +291,8 @@ const AdminOrders = () => {
                         styles={selectStyles}
                         className="w-36"
                         isSearchable={false}
+                        isDisabled={isRowBusy(order._id)}
+                        isLoading={isRestatusing(order._id)}
                       />
                     </td>
                     <td className="px-6 py-4 text-right">

@@ -74,14 +74,19 @@ const AdminDashboard = () => {
   const pendingQuotes = quotes?.filter((q) => q.status === "Pending").length || 0;
 
   const handleUpdateRate = (metal) => {
+    // Cleared on confirmation, not on click. Clearing it first meant a refused
+    // rate — the server rejects implausible ones — took the typed figure with
+    // it, and the owner had to remember what they had entered.
     if (metal === "gold" && goldInput) {
-      updateRates.mutate({ gold: Number(goldInput) });
-      setGoldInput("");
+      updateRates.mutate({ gold: Number(goldInput) }, { onSuccess: () => setGoldInput("") });
     } else if (metal === "silver" && silverInput) {
-      updateRates.mutate({ silver: Number(silverInput) });
-      setSilverInput("");
+      updateRates.mutate({ silver: Number(silverInput) }, { onSuccess: () => setSilverInput("") });
     }
   };
+
+  // Which row is mid-change, so the select that was used is the one that locks.
+  const isQuoteBusy = (id) =>
+    updateQuoteStatus.isLoading && updateQuoteStatus.variables?.id === id;
 
   const handleQuoteStatus = (id, status) => {
     updateQuoteStatus.mutate({ id, status });
@@ -312,8 +317,10 @@ const AdminDashboard = () => {
                       </td>
                       <td className="p-4 text-right">
                         <select
-                          className="bg-surface border border-outline-variant/30 text-xs text-on-surface rounded p-1"
+                          className="bg-surface border border-outline-variant/30 text-xs text-on-surface rounded p-1 disabled:opacity-50"
                           value={quote.status}
+                          disabled={isQuoteBusy(quote._id)}
+                          aria-busy={isQuoteBusy(quote._id)}
                           onChange={(e) => handleQuoteStatus(quote._id, e.target.value)}
                         >
                           <option value="Pending">Pending</option>
